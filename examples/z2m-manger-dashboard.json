@@ -1,0 +1,145 @@
+{
+  "views": [
+    {
+      "title": "Übersicht",
+      "path": "uebersicht",
+      "icon": "mdi:view-dashboard",
+      "type": "sections",
+      "max_columns": 2,
+      "sections": [
+        {
+          "type": "grid",
+          "column_span": 2,
+          "cards": [
+            {
+              "type": "heading",
+              "heading": "Zigbee2MQTT",
+              "icon": "mdi:zigbee"
+            },
+            {
+              "type": "tile",
+              "entity": "sensor.zigbee2mqtt_manager_zigbee2mqtt_gerate",
+              "name": "Geräte",
+              "icon": "mdi:zigbee",
+              "grid_options": {
+                "columns": 6,
+                "rows": 1
+              }
+            },
+            {
+              "type": "tile",
+              "entity": "sensor.zigbee2mqtt_manager_zigbee2mqtt_offline_gerate",
+              "name": "Offline",
+              "icon": "mdi:lan-disconnect",
+              "grid_options": {
+                "columns": 6,
+                "rows": 1
+              }
+            },
+            {
+              "type": "tile",
+              "entity": "sensor.womo_zigbee2mqtt_manager_zigbee2mqtt_deaktivierte_gerate",
+              "name": "Deaktiviert",
+              "icon": "mdi:cancel",
+              "grid_options": {
+                "columns": 6,
+                "rows": 1
+              }
+            },
+            {
+              "type": "tile",
+              "entity": "sensor.zigbee2mqtt_manager_zigbee2mqtt_gerate_mit_niedriger_batterie",
+              "name": "Batterie niedrig",
+              "icon": "mdi:battery-alert",
+              "grid_options": {
+                "columns": 6,
+                "rows": 1
+              }
+            },
+            {
+              "type": "tile",
+              "entity": "sensor.zigbee2mqtt_manager_zigbee2mqtt_gerate_mit_kritischer_batterie",
+              "name": "Batterie kritisch",
+              "icon": "mdi:battery-alert-variant",
+              "grid_options": {
+                "columns": 6,
+                "rows": 1
+              }
+            },
+            {
+              "type": "tile",
+              "entity": "sensor.zigbee2mqtt_manager_zigbee2mqtt_verfugbare_firmware_updates",
+              "name": "Firmware-Updates",
+              "icon": "mdi:update",
+              "grid_options": {
+                "columns": 6,
+                "rows": 1
+              }
+            },
+            {
+              "type": "tile",
+              "entity": "sensor.zigbee2mqtt_manager_zigbee2mqtt_gruppen",
+              "name": "Gruppen",
+              "icon": "mdi:group",
+              "grid_options": {
+                "columns": 6,
+                "rows": 1
+              }
+            },
+            {
+              "type": "shortcut",
+              "label": "Geräte und Verwaltung öffnen",
+              "icon": "mdi:devices",
+              "tap_action": {
+                "action": "navigate",
+                "navigation_path": "/z2m-manger/geraete"
+              },
+              "grid_options": {
+                "columns": "full",
+                "rows": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Geräte",
+      "path": "geraete",
+      "icon": "mdi:devices",
+      "type": "panel",
+      "cards": [
+        {
+          "type": "custom:zigbee2mqtt-manager-card",
+          "title": "Zigbee2MQTT Manager",
+          "base_topic": "zigbee2mqtt",
+          "show_devices": true,
+          "show_battery": true,
+          "show_updates": true,
+          "show_groups": true,
+          "show_bindings": true,
+          "show_bridge": true,
+          "default_tab": "devices",
+          "max_rows": 0,
+          "zoom": 1,
+          "show_stats": true,
+          "show_images": true,
+          "show_search": true,
+          "show_filter_bar": true,
+          "default_sort": "name_asc",
+          "show_group_by": true,
+          "default_group_by": "none",
+          "show_filters": true,
+          "show_model": true,
+          "show_vendor": true,
+          "show_ieee": false,
+          "show_lqi": true,
+          "show_battery_value": true,
+          "show_last_seen": true,
+          "read_only": false,
+          "show_pairing": true
+        }
+      ]
+    }
+  ]
+}
