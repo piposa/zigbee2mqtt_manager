@@ -1,4 +1,4 @@
-# SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): 791a6f15fafbc74f6ba8c64ffd0fd41a2ee4dd4711bb03ff52cf7f2e83180b3d
+# SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): bc7ab49e2304447e63b06022a8f1c66a393dc549deef2ca6d1641afebd623d61
 """Hält den Zustand der Zigbee2MQTT-Bridge und sendet Befehle per MQTT."""
 
 from __future__ import annotations
@@ -260,11 +260,8 @@ class Z2MManager:
         self._meta: dict[str, dict[str, Any]] = {}
         self._groups: dict[int, dict[str, Any]] = {}
         self._states: dict[str, dict[str, Any]] = {}
+        # Zigbee2MQTT-Verfuegbarkeit ist die massgebliche Quelle fuer den Status.
         self._availability: dict[str, bool] = {}
-        # Zeitpunkt der letzten Verfügbarkeits-Meldung und der letzten LIVE-Nachricht
-        # (nicht retained) je Gerät – zum Abgleich, siehe _effective_availability()
-        self._availability_ts: dict[str, datetime] = {}
-        self._live_msg: dict[str, datetime] = {}
         self._last_msg: dict[str, str] = {}
 
         # Persistenter Cache (nach IEEE), siehe async_start()
@@ -420,7 +417,7 @@ class Z2MManager:
         if rel.endswith("/availability"):
             self._handle_availability(rel[: -len("/availability")], payload)
             return
-        self._handle_device_state(rel, payload, bool(getattr(msg, "retain", False)))
+        self._handle_device_state(rel, payload)
 
     def _handle_bridge(self, sub: str, payload: Any) -> None:
         if sub == "state":
@@ -498,8 +495,6 @@ class Z2MManager:
                 for store in (
                     self._states,
                     self._availability,
-                    self._availability_ts,
-                    self._live_msg,
                     self._last_msg,
                 ):
                     if old_name in store and new_name not in store:
@@ -528,15 +523,12 @@ class Z2MManager:
         state = payload.get("state") if isinstance(payload, dict) else payload
         if state in ("online", "offline"):
             self._availability[name] = state == "online"
-            self._availability_ts[name] = dt_util.utcnow()
             self._schedule_update()
 
     def _is_group(self, name: str) -> bool:
         return any(g.get("friendly_name") == name for g in self._groups.values())
 
-    def _handle_device_state(
-        self, name: str, payload: Any, retained: bool = False
-    ) -> None:
+    def _handle_device_state(self, name: str, payload: Any) -> None:
         if not isinstance(payload, dict):
             return
         # Gruppen-Topics sind keine Geräte (sonst tauchen sie als Phantom auf)
@@ -544,8 +536,6 @@ class Z2MManager:
             return
         self._states.setdefault(name, {}).update(payload)
         self._last_msg[name] = dt_util.utcnow().isoformat(timespec="seconds")
-        if not retained:
-            self._live_msg[name] = dt_util.utcnow()
         self._schedule_update()
 
     # ------------------------------------------------------------------
@@ -635,20 +625,12 @@ class Z2MManager:
     def _effective_availability(self, name: str) -> tuple[bool | None, str | None]:
         """Verfügbarkeit eines Geräts: (Wert, Quelle).
 
-        Zigbee2MQTT meldet Geräte, die sich lange nicht gemeldet haben, als offline
-        (bei Batteriegeräten erst nach Stunden). Eine gespeicherte (retained)
-        Offline-Meldung kann veraltet sein. Hat das Gerät NACH dieser Meldung live
-        gesendet, ist es erreichbar – dann gilt es als online (Quelle "activity").
+        Zigbee2MQTTs explizite Availability-Meldung ist massgeblich. Eine
+        Geraete-Payload allein ist kein Beweis fuer Erreichbarkeit und darf
+        einen Offline-Status auch nach einem Neustart nicht ueberschreiben.
         """
         raw = self._availability.get(name)
-        if raw is None:
-            return None, None
-        if raw is False:
-            live = self._live_msg.get(name)
-            seen = self._availability_ts.get(name)
-            if live is not None and seen is not None and live > seen:
-                return True, "activity"
-        return raw, "z2m"
+        return (raw, "z2m") if raw is not None else (None, None)
 
     def _serialize(self, meta: dict[str, Any]) -> dict[str, Any]:
         name = meta.get("friendly_name", "")
