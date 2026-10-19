@@ -1,4 +1,4 @@
-// SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): f7ae8b64f331c98c5bb810dad0a676baa91d94db4c3e9e8b0ed0ac199e45f52b
+// SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): acdedb3f99ca15255c2e769e901e908dfc33ec94d0de596b649b49c56ec91997
 /**
  * zigbee2mqtt-manager-card
  * -------------------------
@@ -96,7 +96,7 @@ const CLASS_ICON = {
 const UNKNOWN_VENDOR = "__unknown__";
 // Feste Filter (Auswahl: Wert -> Textschlüssel). Hersteller und Klasse werden aus den Daten gebildet.
 const FILTER_FIELDS = [
-  { key: "status", label: "flt_status", options: [["online", "flt_online"], ["offline", "flt_offline"]] },
+  { key: "status", label: "flt_status", options: [["online", "flt_online"], ["offline", "flt_offline"], ["disabled", "flt_disabled"]] },
   {
     key: "power",
     label: "flt_power",
@@ -241,14 +241,14 @@ const I18N = {
     error_generic: "Aktion fehlgeschlagen.",
     tab_devices: "Geräte", tab_battery: "Batterie", tab_updates: "Updates",
     tab_groups: "Gruppen", tab_bindings: "Bindings", tab_bridge: "Bridge",
-    chip_devices: "Geräte", chip_offline: "Offline", chip_low_battery: "Batterie niedrig", chip_updates: "Updates",
+    chip_devices: "Geräte", chip_offline: "Offline", chip_disabled: "Deaktiviert", chip_low_battery: "Batterie niedrig", chip_updates: "Updates",
     search: "Name, Modell oder IEEE suchen", sort: "Sortierung",
     sort_name_asc: "Name A–Z", sort_name_desc: "Name Z–A", sort_battery_asc: "Batterie (niedrig zuerst)",
     sort_lqi_asc: "Signal (schwach zuerst)", sort_last_seen_desc: "Zuletzt gesehen (neu zuerst)",
     sort_last_seen_asc: "Zuletzt gesehen (alt zuerst)", sort_ota: "Update-Status",
     no_data: "Noch keine Daten von Zigbee2MQTT. Läuft die Bridge?", no_results: "Keine Treffer.",
     show_more: "{n} weitere anzeigen",
-    status_online: "Online (laut Zigbee2MQTT)", status_offline: "Offline (laut Zigbee2MQTT)", status_seen: "Vermutlich online – zuletzt gesehen {t}. Die Z2M-Verfügbarkeit ist nicht aktiv.", status_stale: "Lange nichts gehört – zuletzt gesehen {t}. Die Z2M-Verfügbarkeit ist nicht aktiv.", status_unknown: "Status unbekannt – noch keine Nachricht empfangen.",
+    status_online: "Online (laut Zigbee2MQTT)", status_offline: "Offline (laut Zigbee2MQTT)", status_disabled: "In Zigbee2MQTT deaktiviert", status_seen: "Vermutlich online – zuletzt gesehen {t}. Die Z2M-Verfügbarkeit ist nicht aktiv.", status_stale: "Lange nichts gehört – zuletzt gesehen {t}. Die Z2M-Verfügbarkeit ist nicht aktiv.", status_unknown: "Status unbekannt – noch keine Nachricht empfangen.",
     offline: "offline", online: "online", unknown: "unbekannt", inactive: "inaktiv", interviewing: "Interview", disabled: "deaktiviert",
     never: "noch nie", yes: "ja", no: "nein", close: "Schließen", save: "Speichern", add: "Hinzufügen", cancel: "Abbrechen",
     confirm: "Wirklich?", loading: "Lade …", details: "Details", remove: "Gerät entfernen", rename: "Umbenennen",
@@ -322,7 +322,7 @@ const I18N = {
     group_by: "Gruppieren", group_none: "Keine Gruppierung", group_vendor: "Hersteller", group_class: "Geräteklasse", group_unknown: "Unbekannt",
     expand_all: "Alle aufklappen", collapse_all: "Alle zuklappen",
     filters: "Filter", filter_active: "{n} aktiv", filter_reset: "Alle Filter zurücksetzen", filter_remove: "Filter entfernen",
-    flt_all: "Alle", flt_status: "Status", flt_online: "Online", flt_offline: "Offline",
+    flt_all: "Alle", flt_status: "Status", flt_online: "Online", flt_offline: "Offline", flt_disabled: "Deaktiviert",
     flt_power: "Stromversorgung", flt_battery_only: "Nur Batteriegeräte", flt_mains_only: "Nur Netzbetrieb", flt_battery_low: "Batterie niedrig",
     flt_signal: "Signal", flt_sig_good: "Gut (ab 100)", flt_sig_mid: "Mittel (50–99)", flt_sig_weak: "Schwach (unter 50)",
     flt_role: "Netzwerk-Rolle", flt_firmware: "Firmware", flt_fw_available: "Update verfügbar",
@@ -345,14 +345,14 @@ const I18N = {
     error_generic: "Action failed.",
     tab_devices: "Devices", tab_battery: "Battery", tab_updates: "Updates",
     tab_groups: "Groups", tab_bindings: "Bindings", tab_bridge: "Bridge",
-    chip_devices: "Devices", chip_offline: "Offline", chip_low_battery: "Low battery", chip_updates: "Updates",
+    chip_devices: "Devices", chip_offline: "Offline", chip_disabled: "Disabled", chip_low_battery: "Low battery", chip_updates: "Updates",
     search: "Search name, model or IEEE", sort: "Sort",
     sort_name_asc: "Name A–Z", sort_name_desc: "Name Z–A", sort_battery_asc: "Battery (lowest first)",
     sort_lqi_asc: "Signal (weakest first)", sort_last_seen_desc: "Last seen (newest first)",
     sort_last_seen_asc: "Last seen (oldest first)", sort_ota: "Update status",
     no_data: "No data from Zigbee2MQTT yet. Is the bridge running?", no_results: "No matches.",
     show_more: "Show {n} more",
-    status_online: "Online (per Zigbee2MQTT)", status_offline: "Offline (per Zigbee2MQTT)", status_seen: "Probably online – last seen {t}. Z2M availability is not enabled.", status_stale: "Not heard from in a long time – last seen {t}. Z2M availability is not enabled.", status_unknown: "Status unknown – no message received yet.",
+    status_online: "Online (per Zigbee2MQTT)", status_offline: "Offline (per Zigbee2MQTT)", status_disabled: "Disabled in Zigbee2MQTT", status_seen: "Probably online – last seen {t}. Z2M availability is not enabled.", status_stale: "Not heard from in a long time – last seen {t}. Z2M availability is not enabled.", status_unknown: "Status unknown – no message received yet.",
     offline: "offline", online: "online", unknown: "unknown", inactive: "inactive", interviewing: "Interviewing", disabled: "disabled",
     never: "never", yes: "yes", no: "no", close: "Close", save: "Save", add: "Add", cancel: "Cancel",
     confirm: "Sure?", loading: "Loading …", details: "Details", remove: "Remove device", rename: "Rename",
@@ -418,7 +418,7 @@ const I18N = {
     group_by: "Group by", group_none: "No grouping", group_vendor: "Manufacturer", group_class: "Device class", group_unknown: "Unknown",
     expand_all: "Expand all", collapse_all: "Collapse all",
     filters: "Filters", filter_active: "{n} active", filter_reset: "Reset all filters", filter_remove: "Remove filter",
-    flt_all: "All", flt_status: "Status", flt_online: "Online", flt_offline: "Offline",
+    flt_all: "All", flt_status: "Status", flt_online: "Online", flt_offline: "Offline", flt_disabled: "Disabled",
     flt_power: "Power source", flt_battery_only: "Battery devices only", flt_mains_only: "Mains-powered only", flt_battery_low: "Low battery",
     flt_signal: "Signal", flt_sig_good: "Good (100+)", flt_sig_mid: "Medium (50–99)", flt_sig_weak: "Weak (below 50)",
     flt_role: "Network role", flt_firmware: "Firmware", flt_fw_available: "Update available",
@@ -441,14 +441,14 @@ const I18N = {
     error_generic: "Actie mislukt.",
     tab_devices: "Apparaten", tab_battery: "Batterij", tab_updates: "Updates",
     tab_groups: "Groepen", tab_bindings: "Bindings", tab_bridge: "Bridge",
-    chip_devices: "Apparaten", chip_offline: "Offline", chip_low_battery: "Batterij laag", chip_updates: "Updates",
+    chip_devices: "Apparaten", chip_offline: "Offline", chip_disabled: "Uitgeschakeld", chip_low_battery: "Batterij laag", chip_updates: "Updates",
     search: "Zoek op naam, model of IEEE", sort: "Sortering",
     sort_name_asc: "Naam A–Z", sort_name_desc: "Naam Z–A", sort_battery_asc: "Batterij (laagste eerst)",
     sort_lqi_asc: "Signaal (zwakste eerst)", sort_last_seen_desc: "Laatst gezien (nieuwste eerst)",
     sort_last_seen_asc: "Laatst gezien (oudste eerst)", sort_ota: "Updatestatus",
     no_data: "Nog geen gegevens van Zigbee2MQTT. Draait de bridge?", no_results: "Geen resultaten.",
     show_more: "{n} meer tonen",
-    status_online: "Online (volgens Zigbee2MQTT)", status_offline: "Offline (volgens Zigbee2MQTT)", status_seen: "Waarschijnlijk online – laatst gezien {t}. De Z2M-beschikbaarheid is niet actief.", status_stale: "Lang niets gehoord – laatst gezien {t}. De Z2M-beschikbaarheid is niet actief.", status_unknown: "Status onbekend – nog geen bericht ontvangen.",
+    status_online: "Online (volgens Zigbee2MQTT)", status_offline: "Offline (volgens Zigbee2MQTT)", status_disabled: "Uitgeschakeld in Zigbee2MQTT", status_seen: "Waarschijnlijk online – laatst gezien {t}. De Z2M-beschikbaarheid is niet actief.", status_stale: "Lang niets gehoord – laatst gezien {t}. De Z2M-beschikbaarheid is niet actief.", status_unknown: "Status onbekend – nog geen bericht ontvangen.",
     offline: "offline", online: "online", unknown: "onbekend", inactive: "inactief", interviewing: "Interview", disabled: "uitgeschakeld",
     never: "nog nooit", yes: "ja", no: "nee", close: "Sluiten", save: "Opslaan", add: "Toevoegen", cancel: "Annuleren",
     confirm: "Zeker weten?", loading: "Laden …", details: "Details", remove: "Apparaat verwijderen", rename: "Hernoemen",
@@ -522,7 +522,7 @@ const I18N = {
     group_by: "Groeperen", group_none: "Geen groepering", group_vendor: "Fabrikant", group_class: "Apparaatklasse", group_unknown: "Onbekend",
     expand_all: "Alles uitklappen", collapse_all: "Alles inklappen",
     filters: "Filters", filter_active: "{n} actief", filter_reset: "Alle filters wissen", filter_remove: "Filter verwijderen",
-    flt_all: "Alle", flt_status: "Status", flt_online: "Online", flt_offline: "Offline",
+    flt_all: "Alle", flt_status: "Status", flt_online: "Online", flt_offline: "Offline", flt_disabled: "Uitgeschakeld",
     flt_power: "Voeding", flt_battery_only: "Alleen batterijapparaten", flt_mains_only: "Alleen netvoeding", flt_battery_low: "Batterij laag",
     flt_signal: "Signaal", flt_sig_good: "Goed (vanaf 100)", flt_sig_mid: "Matig (50–99)", flt_sig_weak: "Zwak (onder 50)",
     flt_role: "Netwerkrol", flt_firmware: "Firmware", flt_fw_available: "Update beschikbaar",
@@ -1533,7 +1533,8 @@ class Zigbee2MqttManagerCard extends HTMLElement {
     else if (tab === "bindings") list = list.filter((d) => d.bindings.length);
 
     if (tab === "devices") {
-      if (this._filter === "offline") list = list.filter((d) => d.available === false);
+      if (this._filter === "offline") list = list.filter((d) => !d.disabled && d.available === false);
+      else if (this._filter === "disabled") list = list.filter((d) => d.disabled);
       else if (this._filter === "low") {
         const t = this._data.stats.low_battery_threshold;
         list = list.filter((d) => d.battery !== null && d.battery !== undefined && d.battery < t);
@@ -1563,6 +1564,7 @@ class Zigbee2MqttManagerCard extends HTMLElement {
 
   // Status wie der Statuspunkt: Z2M-Verfügbarkeit hat Vorrang, sonst aus "zuletzt gesehen" abgeleitet.
   _statusOf(d) {
+    if (d.disabled) return "disabled";
     if (d.available === true) return "online";
     if (d.available === false) return "offline";
     const ts = d.last_seen ? Date.parse(d.last_seen) : NaN;
@@ -1684,6 +1686,7 @@ class Zigbee2MqttManagerCard extends HTMLElement {
     return `<div class="chips">
       ${chip("all", s.total, this._t("chip_devices"), "")}
       ${chip("offline", s.offline, this._t("chip_offline"), "var(--zmm-color-error)")}
+      ${chip("disabled", s.disabled ?? 0, this._t("chip_disabled"), "var(--secondary-text-color, #727272)")}
       ${chip("low", s.low_battery, this._t("chip_low_battery"), "var(--zmm-color-warning)")}
       ${chip("updates", s.updates_available, this._t("chip_updates"), "var(--zmm-color-info)")}
     </div>`;
@@ -1784,7 +1787,10 @@ class Zigbee2MqttManagerCard extends HTMLElement {
     const t = (k, v) => this._t(k, v);
     let cls = "";
     let tip = t("status_unknown");
-    if (d.available === true) {
+    if (d.disabled) {
+      cls = "disabled";
+      tip = t("status_disabled");
+    } else if (d.available === true) {
       cls = "on";
       tip = t("status_online");
     } else if (d.available === false) {
@@ -1836,7 +1842,7 @@ class Zigbee2MqttManagerCard extends HTMLElement {
     }
 
     const badges = [
-      d.available === false ? `<span class="badge" style="--c:var(--zmm-color-error)">${esc(this._t("offline"))}</span>` : "",
+      !d.disabled && d.available === false ? `<span class="badge" style="--c:var(--zmm-color-error)">${esc(this._t("offline"))}</span>` : "",
       d.interviewing ? `<span class="badge" style="--c:var(--zmm-color-warning)">${esc(this._t("interviewing"))}</span>` : "",
       d.disabled ? `<span class="badge">${esc(this._t("disabled"))}</span>` : "",
     ].join("");
@@ -1891,7 +1897,7 @@ class Zigbee2MqttManagerCard extends HTMLElement {
     const html = keys
       .map((k) => {
         const items = buckets.get(k);
-        const off = items.filter((d) => d.available === false).length;
+        const off = items.filter((d) => !d.disabled && d.available === false).length;
         const meta = off ? `${items.length} · ${off} ${this._t("offline")}` : String(items.length);
         const label = mode === "vendor" ? k || this._t("group_unknown") : this._t(`cls_${k}`);
         const icon = mode === "vendor" ? "mdi:factory" : CLASS_ICON[k] || CLASS_ICON.other;
@@ -2444,7 +2450,7 @@ class Zigbee2MqttManagerCard extends HTMLElement {
       [t("f_lqi"), d.linkquality],
       [t("f_battery"), d.battery !== null && d.battery !== undefined ? `${d.battery} %` : null],
       [t("f_voltage"), d.voltage !== null && d.voltage !== undefined ? `${d.voltage} mV` : null],
-      [t("f_available"), d.available === null || d.available === undefined ? null : d.available ? (d.available_source === "activity" ? t("avail_activity") : t("yes")) : t("no")],
+      [t("f_available"), d.disabled ? t("disabled") : d.available === null || d.available === undefined ? null : d.available ? (d.available_source === "activity" ? t("avail_activity") : t("yes")) : t("no")],
       [t("f_last_seen"), this._relTime(d.last_seen)],
     ];
     return lines.map(([k, v]) => this._line(k, esc(v))).join("");

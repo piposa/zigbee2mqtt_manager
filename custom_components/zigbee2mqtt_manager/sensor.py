@@ -1,5 +1,5 @@
-# SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): 807563a39a329fa9c2b3c30b0c1cabaafeaf59ea1d48736d8ce282c8ade57e1d
-"""Übersichts-Sensoren (Geräte, Offline, Batterie niedrig, Updates)."""
+# SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): 2cf265a3a2b8b9b688ee5ebedf57fc3734bfc4e211ee0acbdd755f189a2ff563
+"""Übersichts-Sensoren (Geräte, Offline, Deaktiviert, Batterie, Updates)."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from .manager import Z2MConfigEntry, Z2MManager
 SENSORS: dict[str, tuple[str, str, str | None]] = {
     "devices": ("total", "mdi:zigbee", None),
     "offline": ("offline", "mdi:lan-disconnect", "offline"),
+    "disabled": ("disabled", "mdi:cancel", "disabled"),
     "low_battery": ("low_battery", "mdi:battery-alert", "low_battery"),
     "updates_available": ("updates_available", "mdi:update", "updates_available"),
     "critical_battery": ("critical_battery", "mdi:battery-alert-variant-outline", None),

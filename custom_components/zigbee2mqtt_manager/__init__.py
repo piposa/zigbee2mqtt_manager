@@ -1,4 +1,4 @@
-# SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): f56af64157d1144765898e720e15e78b29e0eb2060bb966891d61ac4d4fae3c3
+# SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): 1a66c966c028da16864e12f1e86251fde6fe6a295587096270245562fc1d11f0
 """Zigbee2MQTT Manager – Verwaltung von Zigbee2MQTT direkt in Home Assistant."""
 
 from __future__ import annotations
@@ -100,7 +100,7 @@ async def _async_ensure_lovelace_resource(hass: HomeAssistant) -> None:
             await resources.async_load()
 
         integration = await async_get_integration(hass, DOMAIN)
-        target_url = f"{_CARD_STATIC_URL}?v={integration.version}-local-issue5-2"
+        target_url = f"{_CARD_STATIC_URL}?v={integration.version}-local-issue5-issue7-1"
         existing = next(
             (
                 item

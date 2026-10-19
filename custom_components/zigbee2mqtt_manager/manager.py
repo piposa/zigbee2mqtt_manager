@@ -1,4 +1,4 @@
-# SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): bc7ab49e2304447e63b06022a8f1c66a393dc549deef2ca6d1641afebd623d61
+# SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): 2765f5e3a688469cae6443e71f1b383452a2a6f451ce09cb9d92db3b40f96f37
 """Hält den Zustand der Zigbee2MQTT-Bridge und sendet Befehle per MQTT."""
 
 from __future__ import annotations
@@ -728,7 +728,8 @@ class Z2MManager:
 
         low_t = self.low_battery_threshold
         crit_t = self.critical_battery_threshold
-        offline = [d for d in devices if d["available"] is False]
+        disabled = [d for d in devices if d["disabled"]]
+        offline = [d for d in devices if not d["disabled"] and d["available"] is False]
         low = [d for d in devices if d["battery"] is not None and d["battery"] < low_t]
         critical = [
             d for d in devices if d["battery"] is not None and d["battery"] < crit_t
@@ -750,6 +751,7 @@ class Z2MManager:
 
         self.details = {
             "offline": [d["name"] for d in offline],
+            "disabled": [d["name"] for d in disabled],
             "low_battery": [d["name"] for d in low],
             "updates_available": [d["name"] for d in available],
         }
@@ -770,6 +772,7 @@ class Z2MManager:
             "stats": {
                 "total": len(devices),
                 "offline": len(offline),
+                "disabled": len(disabled),
                 "low_battery": len(low),
                 "critical_battery": len(critical),
                 "updates_available": len(available),
@@ -792,7 +795,10 @@ class Z2MManager:
         devices = self.data["devices"]
         low_t = self.low_battery_threshold
         return {
-            "offline": {d["name"] for d in devices if d["available"] is False},
+            "offline": {
+                d["name"] for d in devices
+                if not d["disabled"] and d["available"] is False
+            },
             "low": {
                 d["name"]
                 for d in devices
@@ -818,7 +824,7 @@ class Z2MManager:
             self._log("offline", name)
             self._fire(EVENT_DEVICE_OFFLINE, {"name": name, "ieee": by_name[name]["ieee"]})
         for name in previous["offline"] - current["offline"]:
-            if name in by_name:
+            if name in by_name and not by_name[name]["disabled"] and by_name[name]["available"] is True:
                 self._log("online", name)
                 self._fire(EVENT_DEVICE_ONLINE, {"name": name, "ieee": by_name[name]["ieee"]})
         for name in current["low"] - previous["low"]:

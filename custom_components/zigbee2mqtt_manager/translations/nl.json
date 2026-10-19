@@ -60,6 +60,9 @@
       "offline": {
         "name": "Offline apparaten"
       },
+      "disabled": {
+        "name": "Uitgeschakelde apparaten"
+      },
       "low_battery": {
         "name": "Apparaten met lage batterij"
       },

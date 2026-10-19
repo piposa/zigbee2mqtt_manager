@@ -60,6 +60,9 @@
       "offline": {
         "name": "Offline-Geräte"
       },
+      "disabled": {
+        "name": "Deaktivierte Geräte"
+      },
       "low_battery": {
         "name": "Geräte mit niedriger Batterie"
       },
