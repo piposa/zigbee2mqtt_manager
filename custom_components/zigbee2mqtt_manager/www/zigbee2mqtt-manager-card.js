@@ -1,4 +1,4 @@
-// SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): ca70a5063d8f202f4774ea207df912ec7e6d7832cf0d28c02ad3db0b274fa3ed
+// SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): f7ae8b64f331c98c5bb810dad0a676baa91d94db4c3e9e8b0ed0ac199e45f52b
 /**
  * zigbee2mqtt-manager-card
  * -------------------------
@@ -855,6 +855,10 @@ class Zigbee2MqttManagerCard extends HTMLElement {
     this._lastSig = null;
     this._popupSig = null;
     this._built = false;
+    this._wiredDetails = new WeakSet();
+    this._wiredPopupDetails = new WeakSet();
+    this._lastHtml = null;
+    this._lastZoom = null;
   }
 
   // ----------------------------------------------------------------- Lebenszyklus
@@ -1221,7 +1225,7 @@ class Zigbee2MqttManagerCard extends HTMLElement {
     const sig = this._signature();
     if (sig === this._lastSig) return;
     this._lastSig = sig;
-    this._render();
+    this._render(true);
   }
 
   // Erzwingt Neuzeichnen (nach reinen UI-Zustandsänderungen)
@@ -1248,18 +1252,106 @@ class Zigbee2MqttManagerCard extends HTMLElement {
     }
   }
 
-  _render() {
+  // Keep unchanged elements (especially device images and ha-card) mounted.
+  // The list and accordions have stable keys so sorting does not recreate rows.
+  _nodeKey(node) {
+    if (node.nodeType !== Node.ELEMENT_NODE) return null;
+    if (node.matches(".row[data-ieee]")) return `row:${node.dataset.ieee}`;
+    if (node.matches("details[data-k]")) return `details:${node.dataset.k}`;
+    return null;
+  }
+
+  _morphNode(current, next) {
+    if (current.isEqualNode(next)) return current;
+    if (current.nodeType !== next.nodeType ||
+        (current.nodeType === Node.ELEMENT_NODE &&
+         (current.tagName !== next.tagName || this._nodeKey(current) !== this._nodeKey(next)))) {
+      current.replaceWith(next);
+      return next;
+    }
+    if (current.nodeType !== Node.ELEMENT_NODE) {
+      current.nodeValue = next.nodeValue;
+      return current;
+    }
+    for (const attr of [...current.attributes]) {
+      if (!next.hasAttribute(attr.name)) current.removeAttribute(attr.name);
+    }
+    for (const attr of [...next.attributes]) {
+      if (current.getAttribute(attr.name) !== attr.value) current.setAttribute(attr.name, attr.value);
+    }
+    this._morphChildren(current, next);
+    return current;
+  }
+
+  _morphChildren(current, next) {
+    const keyed = new Map();
+    for (const child of current.childNodes) {
+      const key = this._nodeKey(child);
+      if (key) keyed.set(key, child);
+    }
+    let cursor = current.firstChild;
+    for (const wanted of [...next.childNodes]) {
+      const key = this._nodeKey(wanted);
+      const match = key ? keyed.get(key) : cursor && !this._nodeKey(cursor) ? cursor : null;
+      if (match) {
+        if (match !== cursor) current.insertBefore(match, cursor);
+        const kept = this._morphNode(match, wanted);
+        cursor = kept.nextSibling;
+      } else {
+        current.insertBefore(wanted, cursor);
+        cursor = wanted.nextSibling;
+      }
+    }
+    while (cursor) {
+      const stale = cursor;
+      cursor = cursor.nextSibling;
+      stale.remove();
+    }
+  }
+
+  _captureScroll() {
+    const positions = [];
+    const seen = new Set();
+    let node = this;
+    while (node) {
+      if (node instanceof Element && node.scrollHeight > node.clientHeight && !seen.has(node)) {
+        positions.push({ node, top: node.scrollTop, left: node.scrollLeft });
+        seen.add(node);
+      }
+      const parent = node.parentNode;
+      node = parent instanceof ShadowRoot ? parent.host : parent;
+    }
+    const root = this.ownerDocument.scrollingElement;
+    if (root && !seen.has(root)) positions.push({ node: root, top: root.scrollTop, left: root.scrollLeft });
+    return positions;
+  }
+
+  _restoreScroll(positions) {
+    for (const { node, top, left } of positions) {
+      if (!node.isConnected) continue;
+      if (node.scrollTop !== top) node.scrollTop = top;
+      if (node.scrollLeft !== left) node.scrollLeft = left;
+    }
+  }
+
+  _render(preserveDom = false) {
     if (!this._config || !this._built) return;
     const focus = this._captureFocus();
+    const scroll = this._captureScroll();
     const visible = this._visibleTabs();
     if (!visible.includes(this._tab)) this._tab = visible[0];
 
-    this._styleEl.textContent = this._styles();
-    this._contentEl.style.zoom = this._cardZoom();
+    const styles = this._styles();
+    if (this._styleEl.textContent !== styles) this._styleEl.textContent = styles;
+    const zoom = String(this._cardZoom());
+    if (this._lastZoom !== zoom) {
+      this._contentEl.style.zoom = zoom;
+      this._lastZoom = zoom;
+    }
 
     const title = String(this._config.title ?? "").trim();
     const headerAttr = this._config.show_title === false || !title ? "" : ` header="${esc(title)}"`;
-    this._contentEl.innerHTML = `
+    const html = `
       <ha-card${headerAttr}>
         <div class="card-content">
           ${this._renderInstanceBar()}
@@ -1268,10 +1360,22 @@ class Zigbee2MqttManagerCard extends HTMLElement {
           ${this._renderMain()}
         </div>
       </ha-card>`;
+    if (preserveDom && html === this._lastHtml) {
+      // No markup changed; leave the live DOM and its scroll anchors untouched.
+    } else if (preserveDom && this._contentEl.firstElementChild) {
+      const template = document.createElement("template");
+      template.innerHTML = html;
+      this._morphChildren(this._contentEl, template.content);
+    } else {
+      this._contentEl.innerHTML = html;
+    }
+    this._lastHtml = html;
 
     // <details> merkt sich seinen Zustand selbst; wir speichern ihn nur, damit
     // er ein Neuzeichnen überlebt (kein _render() hier, sonst Endlosschleife).
-    this.shadowRoot.querySelectorAll("details[data-k]").forEach((d) => {
+    this._contentEl.querySelectorAll("details[data-k]").forEach((d) => {
+      if (this._wiredDetails.has(d)) return;
+      this._wiredDetails.add(d);
       d.addEventListener("toggle", () => {
         this._open[d.dataset.k] = d.open;
       });
@@ -1279,6 +1383,7 @@ class Zigbee2MqttManagerCard extends HTMLElement {
 
     this._restoreFocus(focus);
     this._renderPopup();
+    this._restoreScroll(scroll);
   }
 
   _isOpen(key, dflt = false) {
@@ -2629,7 +2734,7 @@ class Zigbee2MqttManagerCard extends HTMLElement {
     }
 
     const headImg = this._deviceImage(d);
-    popup.innerHTML = `<div class="popup-head">${headImg}<ha-icon icon="${DEVICE_ICON[d.type] || "mdi:zigbee"}"${headImg ? " hidden" : ""}></ha-icon>
+    const popupHtml = `<div class="popup-head">${headImg}<ha-icon icon="${DEVICE_ICON[d.type] || "mdi:zigbee"}"${headImg ? " hidden" : ""}></ha-icon>
         <span class="popup-title">${esc(d.name)}</span>${
           det?.entities?.length
             ? `<button class="popup-close" data-act="copy_all" title="${esc(t("copy_entities"))}" aria-label="${esc(t("copy_entities"))}"><ha-icon icon="mdi:content-copy"></ha-icon></button>`
@@ -2637,8 +2742,13 @@ class Zigbee2MqttManagerCard extends HTMLElement {
         }
         <button class="popup-close" data-act="close" aria-label="${esc(t("close"))}"><ha-icon icon="mdi:close"></ha-icon></button></div>
       <div class="popup-body">${sections.join("")}</div>`;
+    const template = document.createElement("template");
+    template.innerHTML = popupHtml;
+    this._morphChildren(popup, template.content);
     backdrop.hidden = false;
     popup.querySelectorAll("details[data-k]").forEach((el) => {
+      if (this._wiredPopupDetails.has(el)) return;
+      this._wiredPopupDetails.add(el);
       el.addEventListener("toggle", () => {
         // Ein frisch gezeichnetes <details open> löst selbst ein "toggle" aus. Nur echte
         // Änderungen auswerten, sonst entsteht beim Neuzeichnen eine Endlosschleife
