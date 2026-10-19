@@ -1,0 +1,566 @@
+--- config/custom_components/zigbee2mqtt_manager/www/zigbee2mqtt-manager-card.js
++++ config/custom_components/zigbee2mqtt_manager/www/zigbee2mqtt-manager-card.js
+@@ -1,4 +1,4 @@
+-// SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): ca70a5063d8f202f4774ea207df912ec7e6d7832cf0d28c02ad3db0b274fa3ed
++// SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): acdedb3f99ca15255c2e769e901e908dfc33ec94d0de596b649b49c56ec91997
+ /**
+  * zigbee2mqtt-manager-card
+  * -------------------------
+@@ -96,7 +96,7 @@
+ const UNKNOWN_VENDOR = "__unknown__";
+ // Feste Filter (Auswahl: Wert -> Textschlüssel). Hersteller und Klasse werden aus den Daten gebildet.
+ const FILTER_FIELDS = [
+-  { key: "status", label: "flt_status", options: [["online", "flt_online"], ["offline", "flt_offline"]] },
++  { key: "status", label: "flt_status", options: [["online", "flt_online"], ["offline", "flt_offline"], ["disabled", "flt_disabled"]] },
+   {
+     key: "power",
+     label: "flt_power",
+@@ -241,14 +241,14 @@
+     error_generic: "Aktion fehlgeschlagen.",
+     tab_devices: "Geräte", tab_battery: "Batterie", tab_updates: "Updates",
+     tab_groups: "Gruppen", tab_bindings: "Bindings", tab_bridge: "Bridge",
+-    chip_devices: "Geräte", chip_offline: "Offline", chip_low_battery: "Batterie niedrig", chip_updates: "Updates",
++    chip_devices: "Geräte", chip_offline: "Offline", chip_disabled: "Deaktiviert", chip_low_battery: "Batterie niedrig", chip_updates: "Updates",
+     search: "Name, Modell oder IEEE suchen", sort: "Sortierung",
+     sort_name_asc: "Name A–Z", sort_name_desc: "Name Z–A", sort_battery_asc: "Batterie (niedrig zuerst)",
+     sort_lqi_asc: "Signal (schwach zuerst)", sort_last_seen_desc: "Zuletzt gesehen (neu zuerst)",
+     sort_last_seen_asc: "Zuletzt gesehen (alt zuerst)", sort_ota: "Update-Status",
+     no_data: "Noch keine Daten von Zigbee2MQTT. Läuft die Bridge?", no_results: "Keine Treffer.",
+     show_more: "{n} weitere anzeigen",
+-    status_online: "Online (laut Zigbee2MQTT)", status_offline: "Offline (laut Zigbee2MQTT)", status_seen: "Vermutlich online – zuletzt gesehen {t}. Die Z2M-Verfügbarkeit ist nicht aktiv.", status_stale: "Lange nichts gehört – zuletzt gesehen {t}. Die Z2M-Verfügbarkeit ist nicht aktiv.", status_unknown: "Status unbekannt – noch keine Nachricht empfangen.",
++    status_online: "Online (laut Zigbee2MQTT)", status_offline: "Offline (laut Zigbee2MQTT)", status_disabled: "In Zigbee2MQTT deaktiviert", status_seen: "Vermutlich online – zuletzt gesehen {t}. Die Z2M-Verfügbarkeit ist nicht aktiv.", status_stale: "Lange nichts gehört – zuletzt gesehen {t}. Die Z2M-Verfügbarkeit ist nicht aktiv.", status_unknown: "Status unbekannt – noch keine Nachricht empfangen.",
+     offline: "offline", online: "online", unknown: "unbekannt", inactive: "inaktiv", interviewing: "Interview", disabled: "deaktiviert",
+     never: "noch nie", yes: "ja", no: "nein", close: "Schließen", save: "Speichern", add: "Hinzufügen", cancel: "Abbrechen",
+     confirm: "Wirklich?", loading: "Lade …", details: "Details", remove: "Gerät entfernen", rename: "Umbenennen",
+@@ -322,7 +322,7 @@
+     group_by: "Gruppieren", group_none: "Keine Gruppierung", group_vendor: "Hersteller", group_class: "Geräteklasse", group_unknown: "Unbekannt",
+     expand_all: "Alle aufklappen", collapse_all: "Alle zuklappen",
+     filters: "Filter", filter_active: "{n} aktiv", filter_reset: "Alle Filter zurücksetzen", filter_remove: "Filter entfernen",
+-    flt_all: "Alle", flt_status: "Status", flt_online: "Online", flt_offline: "Offline",
++    flt_all: "Alle", flt_status: "Status", flt_online: "Online", flt_offline: "Offline", flt_disabled: "Deaktiviert",
+     flt_power: "Stromversorgung", flt_battery_only: "Nur Batteriegeräte", flt_mains_only: "Nur Netzbetrieb", flt_battery_low: "Batterie niedrig",
+     flt_signal: "Signal", flt_sig_good: "Gut (ab 100)", flt_sig_mid: "Mittel (50–99)", flt_sig_weak: "Schwach (unter 50)",
+     flt_role: "Netzwerk-Rolle", flt_firmware: "Firmware", flt_fw_available: "Update verfügbar",
+@@ -345,14 +345,14 @@
+     error_generic: "Action failed.",
+     tab_devices: "Devices", tab_battery: "Battery", tab_updates: "Updates",
+     tab_groups: "Groups", tab_bindings: "Bindings", tab_bridge: "Bridge",
+-    chip_devices: "Devices", chip_offline: "Offline", chip_low_battery: "Low battery", chip_updates: "Updates",
++    chip_devices: "Devices", chip_offline: "Offline", chip_disabled: "Disabled", chip_low_battery: "Low battery", chip_updates: "Updates",
+     search: "Search name, model or IEEE", sort: "Sort",
+     sort_name_asc: "Name A–Z", sort_name_desc: "Name Z–A", sort_battery_asc: "Battery (lowest first)",
+     sort_lqi_asc: "Signal (weakest first)", sort_last_seen_desc: "Last seen (newest first)",
+     sort_last_seen_asc: "Last seen (oldest first)", sort_ota: "Update status",
+     no_data: "No data from Zigbee2MQTT yet. Is the bridge running?", no_results: "No matches.",
+     show_more: "Show {n} more",
+-    status_online: "Online (per Zigbee2MQTT)", status_offline: "Offline (per Zigbee2MQTT)", status_seen: "Probably online – last seen {t}. Z2M availability is not enabled.", status_stale: "Not heard from in a long time – last seen {t}. Z2M availability is not enabled.", status_unknown: "Status unknown – no message received yet.",
++    status_online: "Online (per Zigbee2MQTT)", status_offline: "Offline (per Zigbee2MQTT)", status_disabled: "Disabled in Zigbee2MQTT", status_seen: "Probably online – last seen {t}. Z2M availability is not enabled.", status_stale: "Not heard from in a long time – last seen {t}. Z2M availability is not enabled.", status_unknown: "Status unknown – no message received yet.",
+     offline: "offline", online: "online", unknown: "unknown", inactive: "inactive", interviewing: "Interviewing", disabled: "disabled",
+     never: "never", yes: "yes", no: "no", close: "Close", save: "Save", add: "Add", cancel: "Cancel",
+     confirm: "Sure?", loading: "Loading …", details: "Details", remove: "Remove device", rename: "Rename",
+@@ -418,7 +418,7 @@
+     group_by: "Group by", group_none: "No grouping", group_vendor: "Manufacturer", group_class: "Device class", group_unknown: "Unknown",
+     expand_all: "Expand all", collapse_all: "Collapse all",
+     filters: "Filters", filter_active: "{n} active", filter_reset: "Reset all filters", filter_remove: "Remove filter",
+-    flt_all: "All", flt_status: "Status", flt_online: "Online", flt_offline: "Offline",
++    flt_all: "All", flt_status: "Status", flt_online: "Online", flt_offline: "Offline", flt_disabled: "Disabled",
+     flt_power: "Power source", flt_battery_only: "Battery devices only", flt_mains_only: "Mains-powered only", flt_battery_low: "Low battery",
+     flt_signal: "Signal", flt_sig_good: "Good (100+)", flt_sig_mid: "Medium (50–99)", flt_sig_weak: "Weak (below 50)",
+     flt_role: "Network role", flt_firmware: "Firmware", flt_fw_available: "Update available",
+@@ -441,14 +441,14 @@
+     error_generic: "Actie mislukt.",
+     tab_devices: "Apparaten", tab_battery: "Batterij", tab_updates: "Updates",
+     tab_groups: "Groepen", tab_bindings: "Bindings", tab_bridge: "Bridge",
+-    chip_devices: "Apparaten", chip_offline: "Offline", chip_low_battery: "Batterij laag", chip_updates: "Updates",
++    chip_devices: "Apparaten", chip_offline: "Offline", chip_disabled: "Uitgeschakeld", chip_low_battery: "Batterij laag", chip_updates: "Updates",
+     search: "Zoek op naam, model of IEEE", sort: "Sortering",
+     sort_name_asc: "Naam A–Z", sort_name_desc: "Naam Z–A", sort_battery_asc: "Batterij (laagste eerst)",
+     sort_lqi_asc: "Signaal (zwakste eerst)", sort_last_seen_desc: "Laatst gezien (nieuwste eerst)",
+     sort_last_seen_asc: "Laatst gezien (oudste eerst)", sort_ota: "Updatestatus",
+     no_data: "Nog geen gegevens van Zigbee2MQTT. Draait de bridge?", no_results: "Geen resultaten.",
+     show_more: "{n} meer tonen",
+-    status_online: "Online (volgens Zigbee2MQTT)", status_offline: "Offline (volgens Zigbee2MQTT)", status_seen: "Waarschijnlijk online – laatst gezien {t}. De Z2M-beschikbaarheid is niet actief.", status_stale: "Lang niets gehoord – laatst gezien {t}. De Z2M-beschikbaarheid is niet actief.", status_unknown: "Status onbekend – nog geen bericht ontvangen.",
++    status_online: "Online (volgens Zigbee2MQTT)", status_offline: "Offline (volgens Zigbee2MQTT)", status_disabled: "Uitgeschakeld in Zigbee2MQTT", status_seen: "Waarschijnlijk online – laatst gezien {t}. De Z2M-beschikbaarheid is niet actief.", status_stale: "Lang niets gehoord – laatst gezien {t}. De Z2M-beschikbaarheid is niet actief.", status_unknown: "Status onbekend – nog geen bericht ontvangen.",
+     offline: "offline", online: "online", unknown: "onbekend", inactive: "inactief", interviewing: "Interview", disabled: "uitgeschakeld",
+     never: "nog nooit", yes: "ja", no: "nee", close: "Sluiten", save: "Opslaan", add: "Toevoegen", cancel: "Annuleren",
+     confirm: "Zeker weten?", loading: "Laden …", details: "Details", remove: "Apparaat verwijderen", rename: "Hernoemen",
+@@ -522,7 +522,7 @@
+     group_by: "Groeperen", group_none: "Geen groepering", group_vendor: "Fabrikant", group_class: "Apparaatklasse", group_unknown: "Onbekend",
+     expand_all: "Alles uitklappen", collapse_all: "Alles inklappen",
+     filters: "Filters", filter_active: "{n} actief", filter_reset: "Alle filters wissen", filter_remove: "Filter verwijderen",
+-    flt_all: "Alle", flt_status: "Status", flt_online: "Online", flt_offline: "Offline",
++    flt_all: "Alle", flt_status: "Status", flt_online: "Online", flt_offline: "Offline", flt_disabled: "Uitgeschakeld",
+     flt_power: "Voeding", flt_battery_only: "Alleen batterijapparaten", flt_mains_only: "Alleen netvoeding", flt_battery_low: "Batterij laag",
+     flt_signal: "Signaal", flt_sig_good: "Goed (vanaf 100)", flt_sig_mid: "Matig (50–99)", flt_sig_weak: "Zwak (onder 50)",
+     flt_role: "Netwerkrol", flt_firmware: "Firmware", flt_fw_available: "Update beschikbaar",
+@@ -855,6 +855,10 @@
+     this._lastSig = null;
+     this._popupSig = null;
+     this._built = false;
++    this._wiredDetails = new WeakSet();
++    this._wiredPopupDetails = new WeakSet();
++    this._lastHtml = null;
++    this._lastZoom = null;
+   }
+ 
+   // ----------------------------------------------------------------- Lebenszyklus
+@@ -1221,7 +1225,7 @@
+     const sig = this._signature();
+     if (sig === this._lastSig) return;
+     this._lastSig = sig;
+-    this._render();
++    this._render(true);
+   }
+ 
+   // Erzwingt Neuzeichnen (nach reinen UI-Zustandsänderungen)
+@@ -1248,18 +1252,106 @@
+     }
+   }
+ 
+-  _render() {
++  // Keep unchanged elements (especially device images and ha-card) mounted.
++  // The list and accordions have stable keys so sorting does not recreate rows.
++  _nodeKey(node) {
++    if (node.nodeType !== Node.ELEMENT_NODE) return null;
++    if (node.matches(".row[data-ieee]")) return `row:${node.dataset.ieee}`;
++    if (node.matches("details[data-k]")) return `details:${node.dataset.k}`;
++    return null;
++  }
++
++  _morphNode(current, next) {
++    if (current.isEqualNode(next)) return current;
++    if (current.nodeType !== next.nodeType ||
++        (current.nodeType === Node.ELEMENT_NODE &&
++         (current.tagName !== next.tagName || this._nodeKey(current) !== this._nodeKey(next)))) {
++      current.replaceWith(next);
++      return next;
++    }
++    if (current.nodeType !== Node.ELEMENT_NODE) {
++      current.nodeValue = next.nodeValue;
++      return current;
++    }
++    for (const attr of [...current.attributes]) {
++      if (!next.hasAttribute(attr.name)) current.removeAttribute(attr.name);
++    }
++    for (const attr of [...next.attributes]) {
++      if (current.getAttribute(attr.name) !== attr.value) current.setAttribute(attr.name, attr.value);
++    }
++    this._morphChildren(current, next);
++    return current;
++  }
++
++  _morphChildren(current, next) {
++    const keyed = new Map();
++    for (const child of current.childNodes) {
++      const key = this._nodeKey(child);
++      if (key) keyed.set(key, child);
++    }
++    let cursor = current.firstChild;
++    for (const wanted of [...next.childNodes]) {
++      const key = this._nodeKey(wanted);
++      const match = key ? keyed.get(key) : cursor && !this._nodeKey(cursor) ? cursor : null;
++      if (match) {
++        if (match !== cursor) current.insertBefore(match, cursor);
++        const kept = this._morphNode(match, wanted);
++        cursor = kept.nextSibling;
++      } else {
++        current.insertBefore(wanted, cursor);
++        cursor = wanted.nextSibling;
++      }
++    }
++    while (cursor) {
++      const stale = cursor;
++      cursor = cursor.nextSibling;
++      stale.remove();
++    }
++  }
++
++  _captureScroll() {
++    const positions = [];
++    const seen = new Set();
++    let node = this;
++    while (node) {
++      if (node instanceof Element && node.scrollHeight > node.clientHeight && !seen.has(node)) {
++        positions.push({ node, top: node.scrollTop, left: node.scrollLeft });
++        seen.add(node);
++      }
++      const parent = node.parentNode;
++      node = parent instanceof ShadowRoot ? parent.host : parent;
++    }
++    const root = this.ownerDocument.scrollingElement;
++    if (root && !seen.has(root)) positions.push({ node: root, top: root.scrollTop, left: root.scrollLeft });
++    return positions;
++  }
++
++  _restoreScroll(positions) {
++    for (const { node, top, left } of positions) {
++      if (!node.isConnected) continue;
++      if (node.scrollTop !== top) node.scrollTop = top;
++      if (node.scrollLeft !== left) node.scrollLeft = left;
++    }
++  }
++
++  _render(preserveDom = false) {
+     if (!this._config || !this._built) return;
+     const focus = this._captureFocus();
++    const scroll = this._captureScroll();
+     const visible = this._visibleTabs();
+     if (!visible.includes(this._tab)) this._tab = visible[0];
+ 
+-    this._styleEl.textContent = this._styles();
+-    this._contentEl.style.zoom = this._cardZoom();
++    const styles = this._styles();
++    if (this._styleEl.textContent !== styles) this._styleEl.textContent = styles;
++    const zoom = String(this._cardZoom());
++    if (this._lastZoom !== zoom) {
++      this._contentEl.style.zoom = zoom;
++      this._lastZoom = zoom;
++    }
+ 
+     const title = String(this._config.title ?? "").trim();
+     const headerAttr = this._config.show_title === false || !title ? "" : ` header="${esc(title)}"`;
+-    this._contentEl.innerHTML = `
++    const html = `
+       <ha-card${headerAttr}>
+         <div class="card-content">
+           ${this._renderInstanceBar()}
+@@ -1268,10 +1360,22 @@
+           ${this._renderMain()}
+         </div>
+       </ha-card>`;
++    if (preserveDom && html === this._lastHtml) {
++      // No markup changed; leave the live DOM and its scroll anchors untouched.
++    } else if (preserveDom && this._contentEl.firstElementChild) {
++      const template = document.createElement("template");
++      template.innerHTML = html;
++      this._morphChildren(this._contentEl, template.content);
++    } else {
++      this._contentEl.innerHTML = html;
++    }
++    this._lastHtml = html;
+ 
+     // <details> merkt sich seinen Zustand selbst; wir speichern ihn nur, damit
+     // er ein Neuzeichnen überlebt (kein _render() hier, sonst Endlosschleife).
+-    this.shadowRoot.querySelectorAll("details[data-k]").forEach((d) => {
++    this._contentEl.querySelectorAll("details[data-k]").forEach((d) => {
++      if (this._wiredDetails.has(d)) return;
++      this._wiredDetails.add(d);
+       d.addEventListener("toggle", () => {
+         this._open[d.dataset.k] = d.open;
+       });
+@@ -1279,6 +1383,7 @@
+ 
+     this._restoreFocus(focus);
+     this._renderPopup();
++    this._restoreScroll(scroll);
+   }
+ 
+   _isOpen(key, dflt = false) {
+@@ -1428,7 +1533,8 @@
+     else if (tab === "bindings") list = list.filter((d) => d.bindings.length);
+ 
+     if (tab === "devices") {
+-      if (this._filter === "offline") list = list.filter((d) => d.available === false);
++      if (this._filter === "offline") list = list.filter((d) => !d.disabled && d.available === false);
++      else if (this._filter === "disabled") list = list.filter((d) => d.disabled);
+       else if (this._filter === "low") {
+         const t = this._data.stats.low_battery_threshold;
+         list = list.filter((d) => d.battery !== null && d.battery !== undefined && d.battery < t);
+@@ -1458,6 +1564,7 @@
+ 
+   // Status wie der Statuspunkt: Z2M-Verfügbarkeit hat Vorrang, sonst aus "zuletzt gesehen" abgeleitet.
+   _statusOf(d) {
++    if (d.disabled) return "disabled";
+     if (d.available === true) return "online";
+     if (d.available === false) return "offline";
+     const ts = d.last_seen ? Date.parse(d.last_seen) : NaN;
+@@ -1579,6 +1686,7 @@
+     return `<div class="chips">
+       ${chip("all", s.total, this._t("chip_devices"), "")}
+       ${chip("offline", s.offline, this._t("chip_offline"), "var(--zmm-color-error)")}
++      ${chip("disabled", s.disabled ?? 0, this._t("chip_disabled"), "var(--secondary-text-color, #727272)")}
+       ${chip("low", s.low_battery, this._t("chip_low_battery"), "var(--zmm-color-warning)")}
+       ${chip("updates", s.updates_available, this._t("chip_updates"), "var(--zmm-color-info)")}
+     </div>`;
+@@ -1679,7 +1787,10 @@
+     const t = (k, v) => this._t(k, v);
+     let cls = "";
+     let tip = t("status_unknown");
+-    if (d.available === true) {
++    if (d.disabled) {
++      cls = "disabled";
++      tip = t("status_disabled");
++    } else if (d.available === true) {
+       cls = "on";
+       tip = t("status_online");
+     } else if (d.available === false) {
+@@ -1731,7 +1842,7 @@
+     }
+ 
+     const badges = [
+-      d.available === false ? `<span class="badge" style="--c:var(--zmm-color-error)">${esc(this._t("offline"))}</span>` : "",
++      !d.disabled && d.available === false ? `<span class="badge" style="--c:var(--zmm-color-error)">${esc(this._t("offline"))}</span>` : "",
+       d.interviewing ? `<span class="badge" style="--c:var(--zmm-color-warning)">${esc(this._t("interviewing"))}</span>` : "",
+       d.disabled ? `<span class="badge">${esc(this._t("disabled"))}</span>` : "",
+     ].join("");
+@@ -1786,7 +1897,7 @@
+     const html = keys
+       .map((k) => {
+         const items = buckets.get(k);
+-        const off = items.filter((d) => d.available === false).length;
++        const off = items.filter((d) => !d.disabled && d.available === false).length;
+         const meta = off ? `${items.length} · ${off} ${this._t("offline")}` : String(items.length);
+         const label = mode === "vendor" ? k || this._t("group_unknown") : this._t(`cls_${k}`);
+         const icon = mode === "vendor" ? "mdi:factory" : CLASS_ICON[k] || CLASS_ICON.other;
+@@ -2339,7 +2450,7 @@
+       [t("f_lqi"), d.linkquality],
+       [t("f_battery"), d.battery !== null && d.battery !== undefined ? `${d.battery} %` : null],
+       [t("f_voltage"), d.voltage !== null && d.voltage !== undefined ? `${d.voltage} mV` : null],
+-      [t("f_available"), d.available === null || d.available === undefined ? null : d.available ? (d.available_source === "activity" ? t("avail_activity") : t("yes")) : t("no")],
++      [t("f_available"), d.disabled ? t("disabled") : d.available === null || d.available === undefined ? null : d.available ? (d.available_source === "activity" ? t("avail_activity") : t("yes")) : t("no")],
+       [t("f_last_seen"), this._relTime(d.last_seen)],
+     ];
+     return lines.map(([k, v]) => this._line(k, esc(v))).join("");
+@@ -2629,7 +2740,7 @@
+     }
+ 
+     const headImg = this._deviceImage(d);
+-    popup.innerHTML = `<div class="popup-head">${headImg}<ha-icon icon="${DEVICE_ICON[d.type] || "mdi:zigbee"}"${headImg ? " hidden" : ""}></ha-icon>
++    const popupHtml = `<div class="popup-head">${headImg}<ha-icon icon="${DEVICE_ICON[d.type] || "mdi:zigbee"}"${headImg ? " hidden" : ""}></ha-icon>
+         <span class="popup-title">${esc(d.name)}</span>${
+           det?.entities?.length
+             ? `<button class="popup-close" data-act="copy_all" title="${esc(t("copy_entities"))}" aria-label="${esc(t("copy_entities"))}"><ha-icon icon="mdi:content-copy"></ha-icon></button>`
+@@ -2637,8 +2748,13 @@
+         }
+         <button class="popup-close" data-act="close" aria-label="${esc(t("close"))}"><ha-icon icon="mdi:close"></ha-icon></button></div>
+       <div class="popup-body">${sections.join("")}</div>`;
++    const template = document.createElement("template");
++    template.innerHTML = popupHtml;
++    this._morphChildren(popup, template.content);
+     backdrop.hidden = false;
+     popup.querySelectorAll("details[data-k]").forEach((el) => {
++      if (this._wiredPopupDetails.has(el)) return;
++      this._wiredPopupDetails.add(el);
+       el.addEventListener("toggle", () => {
+         // Ein frisch gezeichnetes <details open> löst selbst ein "toggle" aus. Nur echte
+         // Änderungen auswerten, sonst entsteht beim Neuzeichnen eine Endlosschleife
+--- config/custom_components/zigbee2mqtt_manager/__init__.py
++++ config/custom_components/zigbee2mqtt_manager/__init__.py
+@@ -1,4 +1,4 @@
+-# SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): 9f5ac894c5ff2f6534159c0e6e691d24798baa1324f48b740343233cc96a5124
++# SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): 1a66c966c028da16864e12f1e86251fde6fe6a295587096270245562fc1d11f0
+ """Zigbee2MQTT Manager – Verwaltung von Zigbee2MQTT direkt in Home Assistant."""
+ 
+ from __future__ import annotations
+@@ -100,7 +100,7 @@
+             await resources.async_load()
+ 
+         integration = await async_get_integration(hass, DOMAIN)
+-        target_url = f"{_CARD_STATIC_URL}?v={integration.version}"
++        target_url = f"{_CARD_STATIC_URL}?v={integration.version}-local-issue5-issue7-1"
+         existing = next(
+             (
+                 item
+--- config/custom_components/zigbee2mqtt_manager/manager.py
++++ config/custom_components/zigbee2mqtt_manager/manager.py
+@@ -1,4 +1,4 @@
+-# SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): 791a6f15fafbc74f6ba8c64ffd0fd41a2ee4dd4711bb03ff52cf7f2e83180b3d
++# SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): 2765f5e3a688469cae6443e71f1b383452a2a6f451ce09cb9d92db3b40f96f37
+ """Hält den Zustand der Zigbee2MQTT-Bridge und sendet Befehle per MQTT."""
+ 
+ from __future__ import annotations
+@@ -260,11 +260,8 @@
+         self._meta: dict[str, dict[str, Any]] = {}
+         self._groups: dict[int, dict[str, Any]] = {}
+         self._states: dict[str, dict[str, Any]] = {}
++        # Zigbee2MQTT-Verfuegbarkeit ist die massgebliche Quelle fuer den Status.
+         self._availability: dict[str, bool] = {}
+-        # Zeitpunkt der letzten Verfügbarkeits-Meldung und der letzten LIVE-Nachricht
+-        # (nicht retained) je Gerät – zum Abgleich, siehe _effective_availability()
+-        self._availability_ts: dict[str, datetime] = {}
+-        self._live_msg: dict[str, datetime] = {}
+         self._last_msg: dict[str, str] = {}
+ 
+         # Persistenter Cache (nach IEEE), siehe async_start()
+@@ -420,7 +417,7 @@
+         if rel.endswith("/availability"):
+             self._handle_availability(rel[: -len("/availability")], payload)
+             return
+-        self._handle_device_state(rel, payload, bool(getattr(msg, "retain", False)))
++        self._handle_device_state(rel, payload)
+ 
+     def _handle_bridge(self, sub: str, payload: Any) -> None:
+         if sub == "state":
+@@ -498,8 +495,6 @@
+                 for store in (
+                     self._states,
+                     self._availability,
+-                    self._availability_ts,
+-                    self._live_msg,
+                     self._last_msg,
+                 ):
+                     if old_name in store and new_name not in store:
+@@ -528,15 +523,12 @@
+         state = payload.get("state") if isinstance(payload, dict) else payload
+         if state in ("online", "offline"):
+             self._availability[name] = state == "online"
+-            self._availability_ts[name] = dt_util.utcnow()
+             self._schedule_update()
+ 
+     def _is_group(self, name: str) -> bool:
+         return any(g.get("friendly_name") == name for g in self._groups.values())
+ 
+-    def _handle_device_state(
+-        self, name: str, payload: Any, retained: bool = False
+-    ) -> None:
++    def _handle_device_state(self, name: str, payload: Any) -> None:
+         if not isinstance(payload, dict):
+             return
+         # Gruppen-Topics sind keine Geräte (sonst tauchen sie als Phantom auf)
+@@ -544,8 +536,6 @@
+             return
+         self._states.setdefault(name, {}).update(payload)
+         self._last_msg[name] = dt_util.utcnow().isoformat(timespec="seconds")
+-        if not retained:
+-            self._live_msg[name] = dt_util.utcnow()
+         self._schedule_update()
+ 
+     # ------------------------------------------------------------------
+@@ -635,20 +625,12 @@
+     def _effective_availability(self, name: str) -> tuple[bool | None, str | None]:
+         """Verfügbarkeit eines Geräts: (Wert, Quelle).
+ 
+-        Zigbee2MQTT meldet Geräte, die sich lange nicht gemeldet haben, als offline
+-        (bei Batteriegeräten erst nach Stunden). Eine gespeicherte (retained)
+-        Offline-Meldung kann veraltet sein. Hat das Gerät NACH dieser Meldung live
+-        gesendet, ist es erreichbar – dann gilt es als online (Quelle "activity").
++        Zigbee2MQTTs explizite Availability-Meldung ist massgeblich. Eine
++        Geraete-Payload allein ist kein Beweis fuer Erreichbarkeit und darf
++        einen Offline-Status auch nach einem Neustart nicht ueberschreiben.
+         """
+         raw = self._availability.get(name)
+-        if raw is None:
+-            return None, None
+-        if raw is False:
+-            live = self._live_msg.get(name)
+-            seen = self._availability_ts.get(name)
+-            if live is not None and seen is not None and live > seen:
+-                return True, "activity"
+-        return raw, "z2m"
++        return (raw, "z2m") if raw is not None else (None, None)
+ 
+     def _serialize(self, meta: dict[str, Any]) -> dict[str, Any]:
+         name = meta.get("friendly_name", "")
+@@ -746,7 +728,8 @@
+ 
+         low_t = self.low_battery_threshold
+         crit_t = self.critical_battery_threshold
+-        offline = [d for d in devices if d["available"] is False]
++        disabled = [d for d in devices if d["disabled"]]
++        offline = [d for d in devices if not d["disabled"] and d["available"] is False]
+         low = [d for d in devices if d["battery"] is not None and d["battery"] < low_t]
+         critical = [
+             d for d in devices if d["battery"] is not None and d["battery"] < crit_t
+@@ -768,6 +751,7 @@
+ 
+         self.details = {
+             "offline": [d["name"] for d in offline],
++            "disabled": [d["name"] for d in disabled],
+             "low_battery": [d["name"] for d in low],
+             "updates_available": [d["name"] for d in available],
+         }
+@@ -788,6 +772,7 @@
+             "stats": {
+                 "total": len(devices),
+                 "offline": len(offline),
++                "disabled": len(disabled),
+                 "low_battery": len(low),
+                 "critical_battery": len(critical),
+                 "updates_available": len(available),
+@@ -810,7 +795,10 @@
+         devices = self.data["devices"]
+         low_t = self.low_battery_threshold
+         return {
+-            "offline": {d["name"] for d in devices if d["available"] is False},
++            "offline": {
++                d["name"] for d in devices
++                if not d["disabled"] and d["available"] is False
++            },
+             "low": {
+                 d["name"]
+                 for d in devices
+@@ -836,7 +824,7 @@
+             self._log("offline", name)
+             self._fire(EVENT_DEVICE_OFFLINE, {"name": name, "ieee": by_name[name]["ieee"]})
+         for name in previous["offline"] - current["offline"]:
+-            if name in by_name:
++            if name in by_name and not by_name[name]["disabled"] and by_name[name]["available"] is True:
+                 self._log("online", name)
+                 self._fire(EVENT_DEVICE_ONLINE, {"name": name, "ieee": by_name[name]["ieee"]})
+         for name in current["low"] - previous["low"]:
+--- config/custom_components/zigbee2mqtt_manager/sensor.py
++++ config/custom_components/zigbee2mqtt_manager/sensor.py
+@@ -1,5 +1,5 @@
+-# SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): 807563a39a329fa9c2b3c30b0c1cabaafeaf59ea1d48736d8ce282c8ade57e1d
+-"""Übersichts-Sensoren (Geräte, Offline, Batterie niedrig, Updates)."""
++# SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): 2cf265a3a2b8b9b688ee5ebedf57fc3734bfc4e211ee0acbdd755f189a2ff563
++"""Übersichts-Sensoren (Geräte, Offline, Deaktiviert, Batterie, Updates)."""
+ 
+ from __future__ import annotations
+ 
+@@ -17,6 +17,7 @@
+ SENSORS: dict[str, tuple[str, str, str | None]] = {
+     "devices": ("total", "mdi:zigbee", None),
+     "offline": ("offline", "mdi:lan-disconnect", "offline"),
++    "disabled": ("disabled", "mdi:cancel", "disabled"),
+     "low_battery": ("low_battery", "mdi:battery-alert", "low_battery"),
+     "updates_available": ("updates_available", "mdi:update", "updates_available"),
+     "critical_battery": ("critical_battery", "mdi:battery-alert-variant-outline", None),
+--- config/custom_components/zigbee2mqtt_manager/strings.json
++++ config/custom_components/zigbee2mqtt_manager/strings.json
+@@ -60,6 +60,9 @@
+       "offline": {
+         "name": "Offline-Geräte"
+       },
++      "disabled": {
++        "name": "Deaktivierte Geräte"
++      },
+       "low_battery": {
+         "name": "Geräte mit niedriger Batterie"
+       },
+--- config/custom_components/zigbee2mqtt_manager/translations/de.json
++++ config/custom_components/zigbee2mqtt_manager/translations/de.json
+@@ -60,6 +60,9 @@
+       "offline": {
+         "name": "Offline-Geräte"
+       },
++      "disabled": {
++        "name": "Deaktivierte Geräte"
++      },
+       "low_battery": {
+         "name": "Geräte mit niedriger Batterie"
+       },
+--- config/custom_components/zigbee2mqtt_manager/translations/en.json
++++ config/custom_components/zigbee2mqtt_manager/translations/en.json
+@@ -60,6 +60,9 @@
+       "offline": {
+         "name": "Offline devices"
+       },
++      "disabled": {
++        "name": "Disabled devices"
++      },
+       "low_battery": {
+         "name": "Devices with low battery"
+       },
+--- config/custom_components/zigbee2mqtt_manager/translations/nl.json
++++ config/custom_components/zigbee2mqtt_manager/translations/nl.json
+@@ -60,6 +60,9 @@
+       "offline": {
+         "name": "Offline apparaten"
+       },
++      "disabled": {
++        "name": "Uitgeschakelde apparaten"
++      },
+       "low_battery": {
+         "name": "Apparaten met lage batterij"
+       },
