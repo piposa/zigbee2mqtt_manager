@@ -1,4 +1,4 @@
-# SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): 2765f5e3a688469cae6443e71f1b383452a2a6f451ce09cb9d92db3b40f96f37
+# SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): 60a7ce0462517e716d45bb82b4d9470abf2c57e63e86043f7206067d947cd7e2
 """Hält den Zustand der Zigbee2MQTT-Bridge und sendet Befehle per MQTT."""
 
 from __future__ import annotations
@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from collections import deque
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -15,6 +16,7 @@ from homeassistant.components import mqtt
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_call_later, async_track_time_interval
@@ -27,16 +29,28 @@ from .const import (
     CONF_CRITICAL_BATTERY,
     CONF_FIRE_EVENTS,
     CONF_LOW_BATTERY,
+    CONF_NETWORK_URL,
+    CONF_PROBLEM_STALE,
+    CONF_PROBLEM_UPDATES,
+    CONF_SIDEBAR_PANEL,
+    CONF_SIDEBAR_TITLE,
+    CONF_STALE_HOURS,
     DEFAULT_CRITICAL_BATTERY,
     DEFAULT_FIRE_EVENTS,
     DEFAULT_LOW_BATTERY,
+    MAX_COMMENT_LENGTH,
+    DEFAULT_PROBLEM_STALE,
+    DEFAULT_PROBLEM_UPDATES,
+    DEFAULT_STALE_HOURS,
     DOMAIN,
     EVENT_BATTERY_LOW,
     EVENT_DEVICE_JOINED,
     EVENT_DEVICE_LEFT,
+    EVENT_DEVICE_MISSING,
     EVENT_DEVICE_OFFLINE,
     EVENT_DEVICE_ONLINE,
     EVENT_UPDATE_AVAILABLE,
+    EXPECTED_GONE_SECONDS,
     FLUSH_DELAY,
     GITHUB_RELEASES_URL,
     MAX_EVENT_LOG,
@@ -44,8 +58,22 @@ from .const import (
     OTA_CHECK_SPACING,
     PERMIT_JOIN_SECONDS,
     STORAGE_SAVE_DELAY,
+    STALE_TICK,
     STORAGE_VERSION,
     VERSION,
+    valid_link,
+)
+from .nc_catalog import (
+    NC_CATALOG,
+    NC_SOURCE_ICON,
+    NC_STATE_TYPES,
+    NC_TYPE_IDS,
+)
+from .notification_bridge import (
+    EVENT_REPORT as NC_EVENT_REPORT,
+    OPT_ENABLED as NC_OPT_ENABLED,
+    OPT_TYPES as NC_OPT_TYPES,
+    NotificationBridge,
 )
 from .update_check import async_fetch_latest, is_newer
 
@@ -239,9 +267,23 @@ def _device_class(definition: dict[str, Any]) -> str:
     return "sensor"
 
 
+def _definition_icon(definition: dict[str, Any]) -> str | None:
+    """Bild-Adresse, die Zigbee2MQTT selbst mitliefert (definition.icon), nur https."""
+    icon = definition.get("icon")
+    if isinstance(icon, str) and icon.lower().startswith("https://") and valid_link(icon):
+        return icon
+    return None
+
+
 def _same_value(a: Any, b: Any) -> bool:
     """Gleicher Wert UND gleicher Typ (True ist hier nicht dasselbe wie 1)."""
     return type(a) is type(b) and a == b
+
+
+_IEEE_RE = re.compile(r"0x[0-9a-f]{16}")
+
+# Wartezeit nach der ersten Geräteliste, bevor der Ausgangszustand ans Notification Center geht
+NC_SETTLE_SECONDS = 20.0
 
 
 class Z2MManager:
@@ -263,12 +305,19 @@ class Z2MManager:
         # Zigbee2MQTT-Verfuegbarkeit ist die massgebliche Quelle fuer den Status.
         self._availability: dict[str, bool] = {}
         self._last_msg: dict[str, str] = {}
+        # Gerade gespeicherte Kommentare (ieee -> Text), bis Z2M die Konfiguration neu meldet
+        self._comment_pending: dict[str, str] = {}
 
         # Persistenter Cache (nach IEEE), siehe async_start()
         self._store: Store[dict[str, Any]] = Store(
             hass, STORAGE_VERSION, f"{DOMAIN}_{entry.entry_id}"
         )
         self._cache: dict[str, dict[str, Any]] = {}
+        # Zuletzt bekannte Geräte (nach IEEE) und Geräte, die aus der Z2M-Liste verschwunden sind
+        self._known: dict[str, dict[str, Any]] = {}
+        self._missing: dict[str, dict[str, Any]] = {}
+        # Gewollte Entfernungen (über die Karte oder "device_leave"): gelten nicht als "fehlt"
+        self._expected_gone: dict[str, datetime] = {}
 
         self._events: deque[dict[str, Any]] = deque(maxlen=MAX_EVENT_LOG)
         # Version der App (Integration) und Ergebnis der Prüfung auf neue Versionen
@@ -290,6 +339,31 @@ class Z2MManager:
         # Für Ereignis-Erkennung (erster Durchlauf setzt nur die Basislinie)
         self._baseline: dict[str, set[str]] | None = None
 
+        # Optionale Anbindung an das Notification Center (Schnittstelle Schema 1)
+        self.nc = NotificationBridge(
+            hass,
+            entry,
+            source=DOMAIN,
+            name=entry.title,
+            version=VERSION,
+            icon=NC_SOURCE_ICON,
+            catalog=NC_CATALOG,
+        )
+        self.nc.set_state_provider(self._nc_active_state)
+        # Zuordnung Z2M-Gerät -> Home-Assistant-Gerät und Raum (wird bei Registry-Änderungen verworfen)
+        self._ha_cache: dict[str, tuple[str, str, str | None]] | None = None
+        self.problem: dict[str, Any] = {"on": False, "reasons": []}
+        self._nc_started = False
+        self.nc_settle_seconds: float = NC_SETTLE_SECONDS
+        self._nc_ready_at: float | None = None
+        self._nc_timer_set = False
+        # Zuletzt gemeldete aktive Zustände je auflösbarer Art: {type: {key: Eintrag}}
+        self._nc_prev: dict[str, dict[str, dict[str, Any]]] = {}
+        # Anzahl gesendeter Meldungen je Art (nur Zahlen, für die Diagnose)
+        self.nc_sent: dict[str, int] = {}
+        # Optionen ohne die Notification-Center-Schalter: nur deren Änderung lädt neu
+        self._core_options = self._core_of(entry.options)
+
         self.data: dict[str, Any] = {}
         self.details: dict[str, list[str]] = {}
         self._rebuild()
@@ -308,6 +382,18 @@ class Z2MManager:
         )
 
     @property
+    def stale_hours(self) -> int:
+        return int(self.entry.options.get(CONF_STALE_HOURS, DEFAULT_STALE_HOURS))
+
+    @property
+    def problem_includes_updates(self) -> bool:
+        return bool(self.entry.options.get(CONF_PROBLEM_UPDATES, DEFAULT_PROBLEM_UPDATES))
+
+    @property
+    def problem_includes_stale(self) -> bool:
+        return bool(self.entry.options.get(CONF_PROBLEM_STALE, DEFAULT_PROBLEM_STALE))
+
+    @property
     def fire_events(self) -> bool:
         return bool(self.entry.options.get(CONF_FIRE_EVENTS, DEFAULT_FIRE_EVENTS))
 
@@ -320,12 +406,29 @@ class Z2MManager:
             cache = stored.get("devices")
             if isinstance(cache, dict):
                 self._cache = {k: v for k, v in cache.items() if isinstance(v, dict)}
+            # Geräteliste nur übernehmen, wenn sie zum selben Base-Topic gehört (sonst anderer Stick)
+            if stored.get("known_topic") == self.base_topic:
+                known = stored.get("known")
+                if isinstance(known, dict):
+                    self._known = {k: v for k, v in known.items() if isinstance(v, dict)}
+                missing = stored.get("missing")
+                if isinstance(missing, dict):
+                    self._missing = {k: v for k, v in missing.items() if isinstance(v, dict)}
 
         self._unsubs.append(
             await mqtt.async_subscribe(
                 self.hass, f"{self.base_topic}/#", self._handle_message
             )
         )
+
+        # Änderungen an Geräten und Räumen in Home Assistant: Zuordnung neu aufbauen
+        for event in (dr.EVENT_DEVICE_REGISTRY_UPDATED, ar.EVENT_AREA_REGISTRY_UPDATED):
+            self._unsubs.append(self.hass.bus.async_listen(event, self._ha_registry_changed))
+        # "Lange nichts gehört" ändert sich auch ohne neue Nachricht
+        self._unsubs.append(async_track_time_interval(self.hass, self._stale_tick, STALE_TICK))
+
+        # Zählt die gesendeten Meldungen je Art (Diagnose); speichert keine Inhalte
+        self._unsubs.append(self.hass.bus.async_listen(NC_EVENT_REPORT, self._nc_count))
 
         # Beim Start und danach regelmäßig auf eine neue App-Version prüfen
         self._unsubs.append(
@@ -379,6 +482,7 @@ class Z2MManager:
         self._flush_unsub = None
         self._rebuild()
         self._detect_changes()
+        self._nc_detect()
         self._notify("update", self.data)
         self._store.async_delay_save(self._cache_data, STORAGE_SAVE_DELAY)
 
@@ -396,7 +500,12 @@ class Z2MManager:
         # Nur Geräte behalten, die es noch gibt
         if self._meta:
             devices = {k: v for k, v in devices.items() if k in self._meta}
-        return {"devices": devices}
+        return {
+            "devices": devices,
+            "known_topic": self.base_topic,
+            "known": self._known,
+            "missing": self._missing,
+        }
 
     # ------------------------------------------------------------------
     # MQTT-Eingang
@@ -426,6 +535,7 @@ class Z2MManager:
             self._schedule_update()
         elif sub == "info" and isinstance(payload, dict):
             self.bridge_info = payload
+            self._comment_pending.clear()
             self._schedule_update()
         elif sub == "devices" and isinstance(payload, list):
             self._apply_devices(payload)
@@ -441,6 +551,10 @@ class Z2MManager:
     def _handle_response(self, topic: str, payload: Any) -> None:
         if not isinstance(payload, dict):
             return
+        if topic == "device/options" and payload.get("status") == "error":
+            if self._comment_pending:
+                self._comment_pending.clear()
+                self._schedule_update()
         if topic.startswith(_FORWARDED_RESPONSES):
             self._notify(
                 "response",
@@ -467,8 +581,12 @@ class Z2MManager:
         self._log(kind, name, detail)
         if kind == "device_joined":
             self._fire(EVENT_DEVICE_JOINED, {"name": name, "ieee": data.get("ieee_address")})
+            self._nc_once("device_joined", data.get("ieee_address"), name)
         elif kind == "device_leave":
+            if data.get("ieee_address"):
+                self._expected_gone[str(data["ieee_address"])] = dt_util.utcnow()
             self._fire(EVENT_DEVICE_LEFT, {"name": name, "ieee": data.get("ieee_address")})
+            self._nc_once("device_left", data.get("ieee_address"), name)
         self._schedule_update()
 
     def _log(self, kind: str, name: str, detail: str | None = None) -> None:
@@ -513,6 +631,121 @@ class Z2MManager:
                     state[key] = cached[key]
             if "_last_msg" in cached and name not in self._last_msg:
                 self._last_msg[name] = cached["_last_msg"]
+
+        self._track_known(new_meta)
+
+    # ------------------------------------------------------------------
+    # Fehlende Geräte (aus der Z2M-Liste verschwunden)
+    # ------------------------------------------------------------------
+    def _known_snapshot(self, meta: dict[str, Any]) -> dict[str, Any]:
+        """Was von einem Gerät gemerkt wird, falls es aus der Z2M-Liste verschwindet."""
+        name = meta.get("friendly_name") or ""
+        state = self._states.get(name, {})
+        definition = meta.get("definition") or {}
+        dev_icon = self._device_config(meta).get("icon")
+        return {
+            "name": name,
+            "type": meta.get("type"),
+            "vendor": definition.get("vendor"),
+            "model": definition.get("model") or meta.get("model_id"),
+            "image_model": definition.get("model"),
+            "icon": dev_icon if isinstance(dev_icon, str) else None,
+            "icon_url": _definition_icon(definition),
+            "device_class": _device_class(definition),
+            "description": definition.get("description"),
+            "power_source": meta.get("power_source"),
+            "battery": _num(state.get("battery")),
+            "linkquality": _num(state.get("linkquality")),
+            "last_seen": _normalize_ts(state.get("last_seen")) or self._last_msg.get(name),
+        }
+
+    def _refresh_known(self) -> None:
+        """Gemerkte Geräteliste auf den aktuellen Stand bringen (nur mit bekannter Geräteliste)."""
+        if not self._meta:
+            return
+        self._known = {
+            ieee: self._known_snapshot(meta)
+            for ieee, meta in self._meta.items()
+            if meta.get("type") != "Coordinator"
+        }
+
+    def _track_known(self, new_meta: dict[str, dict[str, Any]]) -> None:
+        """Mit der letzten bekannten Liste vergleichen: verschwundene Geräte als "fehlt" merken."""
+        if not new_meta:
+            return  # leere Liste (z. B. Neustart von Z2M): nichts ableiten
+        now = dt_util.utcnow()
+        self._expected_gone = {
+            k: v
+            for k, v in self._expected_gone.items()
+            if (now - v).total_seconds() < EXPECTED_GONE_SECONDS
+        }
+        current = {i for i, m in new_meta.items() if m.get("type") != "Coordinator"}
+        for ieee in [i for i in self._missing if i in current]:
+            snap = self._missing.pop(ieee)
+            self._log("device_back", snap.get("name") or ieee)
+        for ieee, snap in self._known.items():
+            if ieee in current or ieee in self._missing or ieee in self._expected_gone:
+                continue
+            name = snap.get("name") or ieee
+            self._missing[ieee] = {**snap, "missing_since": now.isoformat(timespec="seconds")}
+            self._log("device_missing", name)
+            self._fire(EVENT_DEVICE_MISSING, {"name": name, "ieee": ieee})
+
+    def _serialize_missing(self, ieee: str, snap: dict[str, Any]) -> dict[str, Any]:
+        ha = self._ha_devices().get(ieee.lower())
+        return {
+            "ieee": ieee,
+            "name": snap.get("name") or ieee,
+            "comment": None,
+            "ha_device": ha[1] if ha else None,
+            "ha_device_id": ha[0] if ha else None,
+            "area": ha[2] if ha else None,
+            "stale": False,
+            "type": snap.get("type"),
+            "vendor": snap.get("vendor"),
+            "model": snap.get("model"),
+            "image_model": snap.get("image_model"),
+            "device_class": snap.get("device_class") or "other",
+            "icon": snap.get("icon"),
+            "icon_url": snap.get("icon_url"),
+            "description": snap.get("description"),
+            "power_source": snap.get("power_source"),
+            "network_address": None,
+            "supported": True,
+            "disabled": False,
+            "interviewing": False,
+            "sw_build_id": None,
+            "battery": snap.get("battery"),
+            "voltage": None,
+            "linkquality": snap.get("linkquality"),
+            "available": None,
+            "available_source": None,
+            "last_seen": snap.get("last_seen"),
+            "bindings": [],
+            "out_clusters": [],
+            "has_options": False,
+            "has_exposes": False,
+            "ota": {
+                "capable": False,
+                "state": None,
+                "installed": None,
+                "latest": None,
+                "progress": None,
+                "remaining": None,
+            },
+            "missing": True,
+            "missing_since": snap.get("missing_since"),
+        }
+
+    async def async_forget_missing(self, ieee: str | None = None) -> None:
+        """Ein fehlendes Gerät (oder alle) aus der Merkliste entfernen."""
+        if ieee is None:
+            self._missing.clear()
+        elif ieee in self._missing:
+            del self._missing[ieee]
+        else:
+            raise ValueError(f"Kein fehlendes Gerät: {ieee}")
+        self._schedule_update()
 
     def _apply_groups(self, groups: list[dict[str, Any]]) -> None:
         self._groups = {
@@ -651,15 +884,30 @@ class Z2MManager:
         if isinstance(dev_icon, str):
             icon = dev_icon
 
+        config = self._device_config(meta)
+        comment = self._comment_pending.get(
+            str(meta.get("ieee_address") or "").lower(), config.get("description")
+        )
+        comment = comment.strip() if isinstance(comment, str) and comment.strip() else None
+        ha = self._ha_devices().get(str(meta.get("ieee_address") or "").lower())
+        availability = self._effective_availability(name)
+
         return {
             "ieee": meta.get("ieee_address"),
             "name": name,
+            "comment": comment,
+            "ha_device": ha[1] if ha else None,
+            "ha_device_id": ha[0] if ha else None,
+            "area": ha[2] if ha else None,
+            "stale": self._is_stale(last_seen, availability[0]),
             "type": meta.get("type"),
             "vendor": definition.get("vendor"),
             "model": definition.get("model") or meta.get("model_id"),
             "image_model": definition.get("model"),
             "device_class": _device_class(definition),
             "icon": icon,
+            "icon_url": _definition_icon(definition),
+            "missing": False,
             "description": definition.get("description"),
             "power_source": meta.get("power_source"),
             "network_address": meta.get("network_address"),
@@ -670,8 +918,8 @@ class Z2MManager:
             "battery": _num(state.get("battery")),
             "voltage": _num(state.get("voltage")),
             "linkquality": _num(state.get("linkquality")),
-            "available": self._effective_availability(name)[0],
-            "available_source": self._effective_availability(name)[1],
+            "available": availability[0],
+            "available_source": availability[1],
             "last_seen": last_seen,
             "bindings": self._bindings_of(meta),
             "out_clusters": self._output_clusters(meta),
@@ -707,6 +955,18 @@ class Z2MManager:
             "scenes": len(group.get("scenes") or []),
         }
 
+    def _network_url(self) -> tuple[str | None, str | None]:
+        """Adresse der Zigbee2MQTT-Netzwerkkarte: eigene Angabe, sonst die URL aus der Z2M-Konfiguration."""
+        custom = str(self.entry.options.get(CONF_NETWORK_URL) or "").strip()
+        if custom and valid_link(custom):
+            return custom, "option"
+        config = self.bridge_info.get("config")
+        frontend = config.get("frontend") if isinstance(config, dict) else None
+        url = frontend.get("url") if isinstance(frontend, dict) else None
+        if isinstance(url, str) and url.lower().startswith(("http://", "https://")) and valid_link(url):
+            return f"{url.rstrip('/')}/#/network", "z2m"
+        return None, None
+
     def _bridge_options(self) -> dict[str, Any]:
         config = self.bridge_info.get("config")
         config = config if isinstance(config, dict) else {}
@@ -719,6 +979,7 @@ class Z2MManager:
         return values
 
     def _rebuild(self) -> None:
+        self._refresh_known()
         devices = [
             self._serialize(meta)
             for meta in self._meta.values()
@@ -728,17 +989,24 @@ class Z2MManager:
 
         low_t = self.low_battery_threshold
         crit_t = self.critical_battery_threshold
+        # In Zigbee2MQTT deaktivierte Geräte sind gewollt still: sie zählen nicht als Störung
+        active = [d for d in devices if not d["disabled"]]
         disabled = [d for d in devices if d["disabled"]]
-        offline = [d for d in devices if not d["disabled"] and d["available"] is False]
-        low = [d for d in devices if d["battery"] is not None and d["battery"] < low_t]
+        offline = [d for d in active if d["available"] is False]
+        low = [d for d in active if d["battery"] is not None and d["battery"] < low_t]
         critical = [
-            d for d in devices if d["battery"] is not None and d["battery"] < crit_t
+            d for d in active if d["battery"] is not None and d["battery"] < crit_t
         ]
-        available = [d for d in devices if d["ota"]["state"] == "available"]
-        updating = [d for d in devices if d["ota"]["state"] == "updating"]
+        available = [d for d in active if d["ota"]["state"] == "available"]
+        updating = [d for d in active if d["ota"]["state"] == "updating"]
+        stale = [d for d in active if d["stale"]]
         groups = sorted(
             (self._serialize_group(g) for g in self._groups.values()),
             key=lambda g: (g["name"] or "").lower(),
+        )
+        missing = sorted(
+            (self._serialize_missing(i, snap) for i, snap in self._missing.items()),
+            key=lambda d: (d["name"] or "").lower(),
         )
 
         info = self.bridge_info
@@ -751,10 +1019,26 @@ class Z2MManager:
 
         self.details = {
             "offline": [d["name"] for d in offline],
-            "disabled": [d["name"] for d in disabled],
             "low_battery": [d["name"] for d in low],
             "updates_available": [d["name"] for d in available],
+            "critical_battery": [d["name"] for d in critical],
+            "stale": [d["name"] for d in stale],
+            "disabled": [d["name"] for d in disabled],
+            "missing": [d["name"] for d in missing],
         }
+        reasons: list[str] = []
+        if self.bridge_online is False:
+            reasons.append("bridge_offline")
+        if offline:
+            reasons.append("offline")
+        if low:
+            reasons.append("battery_critical" if critical else "battery_low")
+        if available and self.problem_includes_updates:
+            reasons.append("update_available")
+        if stale and self.problem_includes_stale:
+            reasons.append("stale")
+        self.problem = {"on": bool(reasons), "reasons": reasons}
+        network_url, network_source = self._network_url()
         self.data = {
             "bridge": {
                 "online": self.bridge_online,
@@ -766,33 +1050,40 @@ class Z2MManager:
                 "base_topic": self.base_topic,
                 "coordinator_type": coordinator.get("type"),
                 "coordinator_revision": meta_c.get("revision"),
+                "network_url": network_url,
+                "network_url_source": network_source,
                 "options": self._bridge_options(),
                 "option_values": {k: list(v) for k, v in _BRIDGE_OPTION_VALUES.items()},
             },
             "stats": {
                 "total": len(devices),
                 "offline": len(offline),
-                "disabled": len(disabled),
                 "low_battery": len(low),
                 "critical_battery": len(critical),
                 "updates_available": len(available),
                 "updating": len(updating),
+                "stale": len(stale),
+                "stale_hours": self.stale_hours,
+                "disabled": len(disabled),
+                "missing": len(missing),
                 "groups": len(groups),
                 "low_battery_threshold": low_t,
                 "critical_battery_threshold": crit_t,
             },
             "jobs": dict(self.jobs),
             "app": dict(self.app),
+            "nc": self.nc.snapshot(),
             "events": list(self._events),
             "groups": groups,
             "devices": devices,
+            "missing": missing,
         }
 
     # ------------------------------------------------------------------
     # Ereignisse (offline / Batterie / Update / beigetreten)
     # ------------------------------------------------------------------
     def _snapshot_sets(self) -> dict[str, set[str]]:
-        devices = self.data["devices"]
+        devices = [d for d in self.data["devices"] if not d["disabled"]]
         low_t = self.low_battery_threshold
         return {
             "offline": {
@@ -849,6 +1140,191 @@ class Z2MManager:
                     "latest": ota.get("latest"),
                 },
             )
+
+    # ------------------------------------------------------------------
+    # Notification Center (optional, Schnittstelle Schema 1)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _core_of(options: Any) -> dict[str, Any]:
+        return {
+            k: v for k, v in dict(options).items() if k not in (NC_OPT_ENABLED, NC_OPT_TYPES, CONF_SIDEBAR_PANEL, CONF_SIDEBAR_TITLE)
+        }
+
+    def core_options_changed(self) -> bool:
+        """True, wenn sich andere Optionen als die Notification-Center-Schalter geändert haben."""
+        return self._core_of(self.entry.options) != self._core_options
+
+    def _nc_active_state(self) -> dict[str, list[dict[str, Any]]]:
+        """Aktive Zustände je auflösbarer Meldungsart, abgeleitet aus dem Datenmodell.
+
+        Es gelten die vorhandenen Schwellen aus den Optionen (keine neuen). Ein Gerät unter der
+        kritischen Schwelle erscheint nur als "Batterie kritisch", nicht zusätzlich als "niedrig".
+        """
+        state: dict[str, list[dict[str, Any]]] = {t: [] for t in NC_STATE_TYPES}
+        if self.bridge_online is False:
+            state["bridge_offline"].append(
+                {
+                    "key": self.base_topic,
+                    "subject": {"id": self.base_topic, "name": self.base_topic, "kind": "system"},
+                    "placeholders": {"bridge": self.base_topic},
+                }
+            )
+        low_t = self.low_battery_threshold
+        crit_t = self.critical_battery_threshold
+        for device in self.data.get("devices", []):
+            ieee = device.get("ieee")
+            if not ieee:
+                continue
+            if device.get("disabled"):
+                continue
+            name = device.get("name") or ieee
+            subject = {"id": ieee, "name": name, "kind": "device"}
+            if device["available"] is False:
+                state["device_offline"].append(
+                    {"key": ieee, "subject": subject, "placeholders": {"name": name}}
+                )
+            battery = device["battery"]
+            if battery is not None:
+                entry = {
+                    "key": ieee,
+                    "subject": subject,
+                    "placeholders": {"name": name, "battery": battery},
+                }
+                if battery < crit_t:
+                    state["battery_critical"].append(entry)
+                elif battery < low_t:
+                    state["battery_low"].append(entry)
+            if device["ota"]["state"] == "available":
+                state["update_available"].append(
+                    {"key": ieee, "subject": subject, "placeholders": {"name": name}}
+                )
+        for device in self.data.get("missing", []):
+            ieee = device.get("ieee")
+            if not ieee:
+                continue
+            name = device.get("name") or ieee
+            state["device_missing"].append(
+                {
+                    "key": ieee,
+                    "subject": {"id": ieee, "name": name, "kind": "device"},
+                    "placeholders": {"name": name},
+                }
+            )
+        return state
+
+    @callback
+    def _nc_detect(self) -> None:
+        """Zustandswechsel ans Notification Center melden (genau eine Meldung je Wechsel).
+
+        Gestartet wird erst, wenn die Geräteliste bekannt ist: Register, Ausgangszustand
+        (initial, ohne Push) und Sync. Danach folgt je Eintritt ein "active" und je Ende ein
+        "resolved". Wiederholungen werden nicht gesendet.
+        """
+        if not self._meta:
+            return
+        if not self._nc_started:
+            # Kurz warten: nach dem Start treffen Zustände und Verfügbarkeit noch nach der
+            # Geräteliste ein. Was dabei auftaucht, gehört zum Ausgangszustand (initial),
+            # nicht zu Meldungen, die das Notification Center als neu ausliefern würde.
+            loop_time = self.hass.loop.time()
+            if self._nc_ready_at is None:
+                self._nc_ready_at = loop_time + self.nc_settle_seconds
+            if loop_time < self._nc_ready_at:
+                if not self._nc_timer_set:
+                    self._nc_timer_set = True
+                    self._unsubs.append(
+                        async_call_later(
+                            self.hass, self._nc_ready_at - loop_time + 0.1, self._nc_settled
+                        )
+                    )
+                return
+        current = self._nc_active_state()
+        if not self._nc_started:
+            self._nc_started = True
+            self._nc_prev = {t: {e["key"]: e for e in items} for t, items in current.items()}
+            self.nc.async_start()
+            return
+        for type_ in NC_STATE_TYPES:
+            now = {e["key"]: e for e in current.get(type_, [])}
+            before = self._nc_prev.get(type_, {})
+            for key, entry in now.items():
+                if key not in before:
+                    self.nc.report(
+                        type_,
+                        key,
+                        "active",
+                        subject=entry["subject"],
+                        placeholders=entry["placeholders"],
+                    )
+            for key, entry in before.items():
+                if key not in now:
+                    self.nc.report(
+                        type_,
+                        key,
+                        "resolved",
+                        subject=entry["subject"],
+                        placeholders=entry["placeholders"],
+                    )
+            self._nc_prev[type_] = now
+
+    @callback
+    def _nc_settled(self, _now: Any = None) -> None:
+        self._schedule_update()
+
+    @callback
+    def _nc_once(self, type_: str, ieee: Any, name: str) -> None:
+        """Einmalige Meldung (Gerät beigetreten / hat das Netz verlassen), bleibt bis zum Quittieren."""
+        key = str(ieee or name or "")
+        if not key:
+            return
+        label = name or key
+        self.nc.report(
+            type_,
+            key,
+            "active",
+            subject={"id": key, "name": label, "kind": "device"},
+            placeholders={"name": label},
+        )
+
+    @callback
+    def _nc_count(self, event: Any) -> None:
+        """Zählt eigene Meldungen je Art. Nur Zahlen, keine Inhalte."""
+        data = event.data
+        if data.get("source") != DOMAIN or data.get("entry_id") != self.entry.entry_id:
+            return
+        type_ = str(data.get("type"))
+        self.nc_sent[type_] = self.nc_sent.get(type_, 0) + 1
+
+    @callback
+    def async_nc_options_changed(self) -> None:
+        """Schalter geändert: Katalog und Zustand neu anmelden, Karte sofort aktualisieren."""
+        if self._nc_started:
+            self.nc.async_options_changed()
+        self._rebuild()
+        self._notify("update", self.data)
+
+    def _nc_write_options(self, master: bool | None, types: dict[str, bool] | None) -> None:
+        options = dict(self.entry.options)
+        if master is not None:
+            options[NC_OPT_ENABLED] = master
+        if types is not None:
+            current = options.get(NC_OPT_TYPES)
+            merged = dict(current) if isinstance(current, dict) else {}
+            merged.update(types)
+            options[NC_OPT_TYPES] = merged
+        self.hass.config_entries.async_update_entry(self.entry, options=options)
+
+    async def async_nc_set_master(self, enabled: Any) -> None:
+        if not isinstance(enabled, bool):
+            raise ValueError("Ungültiger Wert für den Hauptschalter")
+        self._nc_write_options(enabled, None)
+
+    async def async_nc_set_type(self, nc_type: Any, enabled: Any) -> None:
+        if nc_type not in NC_TYPE_IDS:
+            raise ValueError(f"Unbekannte Meldungsart: {nc_type}")
+        if not isinstance(enabled, bool):
+            raise ValueError("Ungültiger Wert für die Meldungsart")
+        self._nc_write_options(None, {nc_type: enabled})
 
     # ------------------------------------------------------------------
     # Details auf Anforderung (Optionen-Schema, Entitäten)
@@ -913,29 +1389,70 @@ class Z2MManager:
             "entities": self._entities_of(ieee),
         }
 
+    @callback
+    def _ha_registry_changed(self, _event: Any) -> None:
+        self._ha_cache = None
+        self._schedule_update()
+
+    @callback
+    def _stale_tick(self, _now: Any = None) -> None:
+        if self.stale_hours > 0:
+            self._schedule_update()
+
+    def _is_stale(self, last_seen: str | None, available: bool | None) -> bool:
+        """Länger als die eingestellte Zeit keine Nachricht, Z2M meldet das Gerät aber nicht als offline."""
+        hours = self.stale_hours
+        if hours <= 0 or not last_seen or available is False:
+            return False
+        seen = dt_util.parse_datetime(last_seen)
+        if seen is None:
+            return False
+        if seen.tzinfo is None:
+            seen = seen.replace(tzinfo=UTC)
+        return (dt_util.utcnow() - seen).total_seconds() > hours * 3600
+
+    def _ha_devices(self) -> dict[str, tuple[str, str, str | None]]:
+        """IEEE-Adresse -> (Geräte-ID, Name, Raum) der zugehörigen Home-Assistant-Geräte.
+
+        Die Zuordnung läuft über die MQTT-Identifier; die IEEE-Adresse steckt je nach
+        Discovery in unterschiedlich aufgebauten Identifier-Teilen.
+        """
+        if self._ha_cache is not None:
+            return self._ha_cache
+        dev_reg = dr.async_get(self.hass)
+        area_reg = ar.async_get(self.hass)
+        result: dict[str, tuple[str, str, str | None]] = {}
+        for cfg in self.hass.config_entries.async_entries("mqtt"):
+            for device in dr.async_entries_for_config_entry(dev_reg, cfg.entry_id):
+                area = area_reg.async_get_area(device.area_id) if device.area_id else None
+                info = (
+                    device.id,
+                    device.name_by_user or device.name or "",
+                    area.name if area else None,
+                )
+                for ident in device.identifiers:
+                    if len(ident) < 2 or ident[0] != "mqtt":
+                        continue
+                    for part in ident[1:]:
+                        for found in _IEEE_RE.findall(str(part).lower()):
+                            result.setdefault(found, info)
+        self._ha_cache = result
+        return result
+
     def _entities_of(self, ieee: str | None) -> list[dict[str, str]]:
         if not ieee:
             return []
-        dev_reg = dr.async_get(self.hass)
+        ha = self._ha_devices().get(ieee.lower())
+        if not ha:
+            return []
         ent_reg = er.async_get(self.hass)
-        result: list[dict[str, str]] = []
-        for device in dev_reg.devices.values():
-            # Identifier-Tupel haben je nach Discovery 2 oder mehr Teile
-            matches = any(
-                len(ident) >= 2
-                and ident[0] == "mqtt"
-                and any(str(part).lower().endswith(ieee.lower()) for part in ident[1:])
-                for ident in device.identifiers
-            )
-            if not matches:
-                continue
-            for ent in er.async_entries_for_device(ent_reg, device.id):
-                result.append(
-                    {
-                        "entity_id": ent.entity_id,
-                        "name": ent.name or ent.original_name or "",
-                    }
-                )
+        result = [
+            {
+                "entity_id": ent.entity_id,
+                "name": ent.name or ent.original_name or "",
+            }
+            for ent in er.async_entries_for_device(ent_reg, ha[0])
+        ]
         return sorted(result, key=lambda e: e["entity_id"])
 
     # ------------------------------------------------------------------
@@ -985,6 +1502,25 @@ class Z2MManager:
             {"from": old_name, "to": new_name, "homeassistant_rename": True},
         )
 
+    async def async_set_comment(self, ieee: str | None, comment: Any) -> None:
+        """Kommentar des Geräts ändern (Z2M-Geräteeinstellung "description")."""
+        if comment is not None and not isinstance(comment, str):
+            raise ValueError("Der Kommentar muss ein Text sein")
+        text = "".join(
+            ch for ch in (comment or "") if ch in "\n" or ch.isprintable()
+        ).strip()
+        if len(text) > MAX_COMMENT_LENGTH:
+            raise ValueError(
+                f"Der Kommentar ist zu lang (höchstens {MAX_COMMENT_LENGTH} Zeichen)"
+            )
+        await self._request(
+            "device/options",
+            {"id": self._name_of(ieee), "options": {"description": text}},
+        )
+        # Sofort anzeigen; Z2M bestätigt per Antwort, Fehler setzen den Wert zurück
+        self._comment_pending[str(ieee or "").lower()] = text
+        self._schedule_update()
+
     async def async_set_options(self, ieee: str | None, options: Any) -> None:
         if not isinstance(options, dict) or not options:
             raise ValueError("Keine Optionen übergeben")
@@ -1025,8 +1561,14 @@ class Z2MManager:
         )
 
     async def async_remove(self, ieee: str | None, force: bool = False) -> None:
+        # Gewollte Entfernung: das Gerät soll danach nicht als "fehlt" erscheinen
+        name = self._name_of(ieee)
+        if ieee:
+            self._expected_gone[ieee] = dt_util.utcnow()
+            self._known.pop(ieee, None)
+            self._missing.pop(ieee, None)
         await self._request(
-            "device/remove", {"id": self._name_of(ieee), "force": bool(force)}
+            "device/remove", {"id": name, "force": bool(force)}
         )
 
     # --- OTA ----------------------------------------------------------

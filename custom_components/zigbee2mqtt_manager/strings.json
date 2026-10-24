@@ -24,7 +24,7 @@
     },
     "error": {
       "invalid_topic": "Ungültiges Base-Topic (leer oder mit # bzw. +).",
-      "topic_overlap": "Base topics of several instances must not be nested (e.g. “zigbee2mqtt” and “zigbee2mqtt/stick2”). Use separate ones such as “zigbee2mqtt” and “zigbee2mqtt2”."
+      "topic_overlap": "Base-Topics mehrerer Instanzen dürfen nicht ineinander liegen (z. B. „zigbee2mqtt“ und „zigbee2mqtt/stick2“). Nimm getrennte wie „zigbee2mqtt“ und „zigbee2mqtt2“."
     },
     "abort": {
       "already_configured": "Für dieses Base-Topic existiert bereits ein Eintrag.",
@@ -36,20 +36,37 @@
     "step": {
       "init": {
         "title": "Zigbee2MQTT Manager – Einstellungen",
-        "description": "Installierte Version: **{version}**\n\n{update_info}",
+        "description": "Installierte Version: **{version}**\n\nBase-Topic dieser Instanz: **{base_topic}**\n\n{update_info}",
         "data": {
           "low_battery_threshold": "Schwelle für „Batterie niedrig“ (%)",
           "critical_battery_threshold": "Schwelle für „Batterie kritisch“ (%)",
-          "fire_events": "Home-Assistant-Ereignisse auslösen"
+          "fire_events": "Home-Assistant-Ereignisse auslösen",
+          "nc_enabled": "Meldungen ans Notification Center senden",
+          "nc_types": "Meldungsarten",
+          "stale_hours": "„Lange nichts gehört“ nach (Stunden)",
+          "problem_include_updates": "Updates zählen als Störung",
+          "problem_include_stale": "„Lange nichts gehört“ zählt als Störung",
+          "sidebar_panel": "Eintrag in der Seitenleiste",
+          "sidebar_title": "Name in der Seitenleiste",
+          "network_url": "Adresse der Netzwerkkarte (optional)"
         },
         "data_description": {
           "critical_battery_threshold": "Muss kleiner oder gleich der Schwelle für „Batterie niedrig“ sein.",
-          "fire_events": "Löst z. B. zigbee2mqtt_manager_device_offline, _battery_low und _update_available aus – nutzbar als Automations-Auslöser."
+          "fire_events": "Löst z. B. zigbee2mqtt_manager_device_offline, _battery_low und _update_available aus – nutzbar als Automations-Auslöser.",
+          "nc_enabled": "Nur wirksam, wenn die Integration „Notification Center“ installiert ist. Der Hauptschalter schaltet alle Meldungen dieses Managers ein oder aus.",
+          "nc_types": "Auswahl der Meldungen, die gesendet werden. Die Liste ist nach Dringlichkeit sortiert, Kritisches steht oben.",
+          "stale_hours": "Stunden ohne Nachricht, ab denen ein Gerät als „lange nichts gehört“ gilt (0 = aus). Geräte, die Zigbee2MQTT schon als offline meldet, zählen unter Offline.",
+          "problem_include_updates": "Der Sensor „Störung“ geht auch an, wenn ein Firmware-Update verfügbar ist.",
+          "problem_include_stale": "Der Sensor „Störung“ geht auch an, wenn ein Gerät länger als die eingestellte Zeit still ist. Vorsicht bei Geräten, die selten senden.",
+          "sidebar_panel": "Zeigt die Karte als eigene Seite in der Seitenleiste (nur für Administratoren). So ist kein eigenes Dashboard nötig.",
+          "sidebar_title": "Beschriftung des Eintrags in der Seitenleiste (Standard: „Zigbee2MQTT Manager“). Praktisch, wenn zusätzlich die Z2M-App mit demselben Symbol dort steht. Wirkt sofort.",
+          "network_url": "Wohin der Knopf „Netzwerk“ führt, z. B. die Netzwerkkarte deiner Zigbee2MQTT-Oberfläche (http://… oder ein Pfad wie /hassio/ingress/…). Leer lassen: Die Adresse aus der Z2M-Konfiguration bzw. die Seitenleisten-App von Zigbee2MQTT wird verwendet."
         }
       }
     },
     "error": {
-      "critical_above_low": "Die kritische Schwelle darf nicht über der Schwelle für „niedrig“ liegen."
+      "critical_above_low": "Die kritische Schwelle darf nicht über der Schwelle für „niedrig“ liegen.",
+      "invalid_url": "Ungültige Adresse. Erlaubt sind http://, https:// oder ein Pfad, der mit / beginnt (ohne Leerzeichen)."
     }
   },
   "entity": {
@@ -60,20 +77,28 @@
       "offline": {
         "name": "Offline-Geräte"
       },
-      "disabled": {
-        "name": "Deaktivierte Geräte"
-      },
       "low_battery": {
         "name": "Geräte mit niedriger Batterie"
       },
       "critical_battery": {
         "name": "Geräte mit kritischer Batterie"
       },
+      "disabled": {
+        "name": "Deaktivierte Geräte"
+      },
       "updates_available": {
         "name": "Verfügbare Firmware-Updates"
       },
       "groups": {
         "name": "Gruppen"
+      },
+      "missing": {
+        "name": "Fehlende Geräte"
+      }
+    },
+    "binary_sensor": {
+      "problem": {
+        "name": "Störung"
       }
     }
   },
@@ -95,8 +120,8 @@
           "description": "Dauer in Sekunden (10–254)."
         },
         "base_topic": {
-          "name": "Base topic",
-          "description": "Only needed with several instances. Alternative to the entry ID."
+          "name": "Base-Topic",
+          "description": "Nur bei mehreren Instanzen nötig. Alternative zur Eintrags-ID."
         }
       }
     },
@@ -109,8 +134,8 @@
           "description": "Nur bei mehreren Instanzen nötig."
         },
         "base_topic": {
-          "name": "Base topic",
-          "description": "Only needed with several instances. Alternative to the entry ID."
+          "name": "Base-Topic",
+          "description": "Nur bei mehreren Instanzen nötig. Alternative zur Eintrags-ID."
         }
       }
     }

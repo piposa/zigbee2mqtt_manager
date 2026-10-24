@@ -1,4 +1,4 @@
-# SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): 1a66c966c028da16864e12f1e86251fde6fe6a295587096270245562fc1d11f0
+# SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): 23d7628e96849c0c824bc5b841e94337e0b561773538867ad493216a1cee2f52
 """Zigbee2MQTT Manager – Verwaltung von Zigbee2MQTT direkt in Home Assistant."""
 
 from __future__ import annotations
@@ -8,6 +8,7 @@ from pathlib import Path
 
 import voluptuous as vol
 
+from homeassistant.components import frontend, persistent_notification
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import Platform
@@ -18,24 +19,88 @@ from homeassistant.helpers.typing import ConfigType
 from homeassistant.loader import async_get_integration
 
 from .const import (
+    CONF_SIDEBAR_PANEL,
+    CONF_SIDEBAR_TITLE,
+    CONF_WELCOME_SHOWN,
     CARD_FILENAME,
     CARD_URL_BASE,
+    DEFAULT_SIDEBAR_PANEL,
+    DEFAULT_SIDEBAR_TITLE,
     DOMAIN,
+    MAX_SIDEBAR_TITLE,
+    PANEL_ELEMENT,
+    PANEL_FILENAME,
+    PANEL_URL_PATH,
     SERVICE_CHECK_UPDATES,
     SERVICE_PERMIT_JOIN,
+    clean_title,
 )
 from .manager import Z2MConfigEntry, Z2MManager
 from .websocket_api import async_register_websocket_api
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+_DASHBOARDS = "https://my.home-assistant.io/redirect/lovelace_dashboards/"
+_WELCOME = {
+    "de": (
+        "Zigbee2MQTT Manager ist eingerichtet",
+        "Die Karte ist sofort in der Seitenleiste unter **{title}** erreichbar (Name und Anzeige änderbar unter *Konfigurieren*). Für ein eigenes Dashboard: **Dashboard bearbeiten → Karte hinzufügen → „Zigbee2MQTT Manager“**.\n\n"
+        f"[Dashboards öffnen]({_DASHBOARDS}) · Eine fertige Dashboard-Vorlage steht in der README (Ordner `examples`).\n\n"
+        "Für die Leitseite gibt es den Sensor „Störung“ (Binärsensor) mit allen Zählern als Attribute.",
+    ),
+    "en": (
+        "Zigbee2MQTT Manager is set up",
+        "The card is available right away in the sidebar under **{title}** (name and visibility can be changed under *Configure*). For your own dashboard: **Edit dashboard → Add card → “Zigbee2MQTT Manager”**.\n\n"
+        f"[Open dashboards]({_DASHBOARDS}) · A ready-made dashboard template is in the README (folder `examples`).\n\n"
+        "For your home page there is the “Problem” binary sensor with all counters as attributes.",
+    ),
+    "nl": (
+        "Zigbee2MQTT Manager is ingesteld",
+        "De kaart is meteen beschikbaar in de zijbalk onder **{title}** (naam en weergave aan te passen onder *Configureren*). Voor een eigen dashboard: **Dashboard bewerken → Kaart toevoegen → „Zigbee2MQTT Manager”**.\n\n"
+        f"[Dashboards openen]({_DASHBOARDS}) · Een kant-en-klare dashboardsjabloon staat in de README (map `examples`).\n\n"
+        "Voor je startpagina is er de binaire sensor „Storing” met alle tellers als attributen.",
+    ),
+    "fr": (
+        "Zigbee2MQTT Manager est configuré",
+        "La carte est disponible tout de suite dans la barre latérale sous **{title}** (nom et affichage modifiables sous *Configurer*). Pour ton propre tableau de bord : **Modifier le tableau de bord → Ajouter une carte → « Zigbee2MQTT Manager »**.\n\n"
+        f"[Ouvrir les tableaux de bord]({_DASHBOARDS}) · Un modèle de tableau de bord prêt à l'emploi se trouve dans le README (dossier `examples`).\n\n"
+        "Pour ta page d'accueil, il y a le capteur binaire « Problème » avec tous les compteurs en attributs.",
+    ),
+    "es": (
+        "Zigbee2MQTT Manager está configurado",
+        "La tarjeta está disponible enseguida en la barra lateral bajo **{title}** (nombre y visibilidad modificables en *Configurar*). Para tu propio panel: **Editar panel → Añadir tarjeta → «Zigbee2MQTT Manager»**.\n\n"
+        f"[Abrir paneles]({_DASHBOARDS}) · Una plantilla de panel lista para usar está en el README (carpeta `examples`).\n\n"
+        "Para tu página de inicio existe el sensor binario «Problema» con todos los contadores como atributos.",
+    ),
+    "sr": (
+        "Zigbee2MQTT Manager је подешен",
+        "Картица је одмах доступна у бочној траци под називом **{title}** (назив и приказ се мењају у *Подешавања*). За сопствену контролну таблу: **Уреди таблу → Додај картицу → „Zigbee2MQTT Manager“**.\n\n"
+        f"[Отвори контролне табле]({_DASHBOARDS}) · Готов шаблон табле налази се у README (фолдер `examples`).\n\n"
+        "За почетну страницу постоји бинарни сензор „Сметња“ са свим бројачима као атрибутима.",
+    ),
+    "sr-Latn": (
+        "Zigbee2MQTT Manager je podešen",
+        "Kartica je odmah dostupna u bočnoj traci pod nazivom **{title}** (naziv i prikaz se menjaju u *Podešavanja*). Za sopstvenu kontrolnu tablu: **Uredi tablu → Dodaj karticu → „Zigbee2MQTT Manager“**.\n\n"
+        f"[Otvori kontrolne table]({_DASHBOARDS}) · Gotov šablon table nalazi se u README (folder `examples`).\n\n"
+        "Za početnu stranicu postoji binarni senzor „Smetnja“ sa svim brojačima kao atributima.",
+    ),
+}
 
 _CARD_DIR = Path(__file__).parent / "www"
 _CARD_STATIC_URL = f"{CARD_URL_BASE}/{CARD_FILENAME}"
 _FRONTEND_KEY = f"{DOMAIN}_frontend_registered"
+_PANEL_KEY = f"{DOMAIN}_panel_registered"
+_PANEL_TITLE_KEY = f"{DOMAIN}_panel_title"
+
+
+def _language_key(hass: HomeAssistant) -> str:
+    """Sprachschlüssel der eigenen Texte: "sr-Latn" bleibt erhalten, sonst nur der Sprachteil."""
+    raw = str(hass.config.language)
+    return "sr-Latn" if raw.lower().replace("_", "-").startswith("sr-latn") else raw[:2]
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -100,7 +165,7 @@ async def _async_ensure_lovelace_resource(hass: HomeAssistant) -> None:
             await resources.async_load()
 
         integration = await async_get_integration(hass, DOMAIN)
-        target_url = f"{_CARD_STATIC_URL}?v={integration.version}-local-issue5-issue7-1"
+        target_url = f"{_CARD_STATIC_URL}?v={integration.version}-piposa-1"
         existing = next(
             (
                 item
@@ -201,16 +266,105 @@ async def async_setup_entry(hass: HomeAssistant, entry: Z2MConfigEntry) -> bool:
     entry.runtime_data = manager
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    entry.async_on_unload(entry.add_update_listener(_async_reload_on_options))
+    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
+    _async_welcome(hass, entry)
+    await _async_sync_panel(hass)
     return True
+
+
+# --- Seitenleisten-Eintrag (eigene Seite mit der Karte) -----------------------
+#
+# Home Assistant bietet Integrationen keine öffentliche Schnittstelle, um ein
+# Lovelace-Dashboard anzulegen. Öffentlich und stabil ist dagegen ein eigenes Panel:
+# Es erscheint in der Seitenleiste und zeigt die Karte als ganze Seite, ohne dass ein
+# Dashboard gebaut werden muss. Abschaltbar unter "Konfigurieren".
+def _panel_wanted(hass: HomeAssistant) -> bool:
+    active = (ConfigEntryState.LOADED, ConfigEntryState.SETUP_IN_PROGRESS)
+    return any(
+        entry.options.get(CONF_SIDEBAR_PANEL, DEFAULT_SIDEBAR_PANEL)
+        for entry in hass.config_entries.async_entries(DOMAIN)
+        if entry.state in active
+    )
+
+
+def _panel_title(hass: HomeAssistant) -> str:
+    """Beschriftung des Seitenleisten-Eintrags: die erste eigene Angabe, sonst der Standard."""
+    active = (ConfigEntryState.LOADED, ConfigEntryState.SETUP_IN_PROGRESS)
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.state in active and entry.options.get(CONF_SIDEBAR_PANEL, DEFAULT_SIDEBAR_PANEL):
+            return clean_title(
+                entry.options.get(CONF_SIDEBAR_TITLE), DEFAULT_SIDEBAR_TITLE, MAX_SIDEBAR_TITLE
+            )
+    return DEFAULT_SIDEBAR_TITLE
+
+
+async def _async_sync_panel(hass: HomeAssistant) -> None:
+    """Seitenleisten-Eintrag anlegen oder entfernen, je nach Optionen der geladenen Einträge."""
+    registered = bool(hass.data.get(_PANEL_KEY))
+    wanted = _panel_wanted(hass) and bool(hass.data.get(_FRONTEND_KEY))
+    title = _panel_title(hass)
+    try:
+        # Neu anlegen, wenn noch nicht vorhanden oder sich der Name geändert hat
+        if wanted and (not registered or hass.data.get(_PANEL_TITLE_KEY) != title):
+            integration = await async_get_integration(hass, DOMAIN)
+            version = integration.version
+            frontend.async_register_built_in_panel(
+                hass,
+                component_name="custom",
+                sidebar_title=title,
+                sidebar_icon="mdi:zigbee",
+                frontend_url_path=PANEL_URL_PATH,
+                config={
+                    "title": title,
+                    "card_url": f"{_CARD_STATIC_URL}?v={version}",
+                    "_panel_custom": {
+                        "name": PANEL_ELEMENT,
+                        "embed_iframe": False,
+                        "trust_external": False,
+                        "module_url": f"{CARD_URL_BASE}/{PANEL_FILENAME}?v={version}",
+                    },
+                },
+                require_admin=True,
+                update=True,
+            )
+            hass.data[_PANEL_KEY] = True
+            hass.data[_PANEL_TITLE_KEY] = title
+        elif registered and not wanted:
+            frontend.async_remove_panel(hass, PANEL_URL_PATH, warn_if_unknown=False)
+            hass.data[_PANEL_KEY] = False
+    except Exception as err:  # noqa: BLE001 - darf das Setup nie verhindern
+        _LOGGER.warning("Seitenleisten-Eintrag nicht anlegbar oder entfernbar: %s", err)
+
+
+def _async_welcome(hass: HomeAssistant, entry: Z2MConfigEntry) -> None:
+    """Einmalig nach der Einrichtung: Hinweis, wie die Karte ins Dashboard kommt."""
+    if entry.data.get(CONF_WELCOME_SHOWN):
+        return
+    lang = _language_key(hass)
+    title, message = _WELCOME.get(lang, _WELCOME["en"])
+    panel_title = clean_title(
+        entry.options.get(CONF_SIDEBAR_TITLE), DEFAULT_SIDEBAR_TITLE, MAX_SIDEBAR_TITLE
+    )
+    persistent_notification.async_create(
+        hass, message.replace("{title}", panel_title), title=title, notification_id=f"{DOMAIN}_welcome_{entry.entry_id}"
+    )
+    # Reine Datenänderung: lädt die Integration nicht neu (nur Optionen tun das)
+    hass.config_entries.async_update_entry(entry, data={**entry.data, CONF_WELCOME_SHOWN: True})
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: Z2MConfigEntry) -> bool:
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
         entry.runtime_data.async_stop()
+        await _async_sync_panel(hass)
     return unloaded
 
 
-async def _async_reload_on_options(hass: HomeAssistant, entry: Z2MConfigEntry) -> None:
-    await hass.config_entries.async_reload(entry.entry_id)
+async def _async_options_updated(hass: HomeAssistant, entry: Z2MConfigEntry) -> None:
+    """Optionen geändert: bei Schaltern des Notification Centers nur neu anmelden, sonst neu laden."""
+    manager = entry.runtime_data
+    await _async_sync_panel(hass)
+    if manager.core_options_changed():
+        await hass.config_entries.async_reload(entry.entry_id)
+    else:
+        manager.async_nc_options_changed()

@@ -1,4 +1,4 @@
-# SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): e58eb0c85ef5173745ac4a518232ce54c73f92453e2171f788abdbd50e7d28d0
+# SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): 98db3e4da4c7b391bb4ad84794085e80ed790815d309e7822132c3b6c96416d0
 """WebSocket-API zwischen Lovelace-Karte und Integration."""
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from homeassistant.core import HomeAssistant, callback
 
 from .const import DOMAIN, WS_ACTION, WS_SUBSCRIBE
 from .manager import Z2MManager
+from .nc_catalog import NC_TYPE_IDS
 
 WS_DETAILS = f"{DOMAIN}/details"
 WS_INSTANCES = f"{DOMAIN}/instances"
@@ -21,8 +22,11 @@ ACTIONS = [
     # Geräte
     "rename",
     "set_options",
+    "set_comment",
     "set_expose",
     "remove",
+    "forget_missing",
+    "forget_missing_all",
     # Firmware
     "ota_check",
     "ota_update",
@@ -34,6 +38,9 @@ ACTIONS = [
     "restart",
     "bridge_option",
     "app_update_check",
+    # Notification Center (optional)
+    "nc_set_master",
+    "nc_set_type",
     # Gruppen
     "group_add",
     "group_rename",
@@ -139,6 +146,8 @@ async def ws_details(
         vol.Optional("clusters"): [str],
         vol.Optional("key"): str,
         vol.Optional("value"): vol.Any(str, bool, int, float, dict),
+        vol.Optional("enabled"): bool,
+        vol.Optional("nc_type"): vol.In(NC_TYPE_IDS),
     }
 )
 @websocket_api.async_response
@@ -161,12 +170,18 @@ async def ws_action(
     try:
         if action == "rename":
             await manager.async_rename(ieee, str(value or ""))
+        elif action == "set_comment":
+            await manager.async_set_comment(ieee, value)
         elif action == "set_options":
             await manager.async_set_options(ieee, value)
         elif action == "set_expose":
             await manager.async_set_expose(ieee, msg.get("key"), value)
         elif action == "remove":
             await manager.async_remove(ieee, bool(value))
+        elif action == "forget_missing":
+            await manager.async_forget_missing(ieee)
+        elif action == "forget_missing_all":
+            await manager.async_forget_missing()
         elif action == "ota_check":
             await manager.async_ota_check(ieee)
         elif action == "ota_update":
@@ -185,6 +200,10 @@ async def ws_action(
             await manager.async_set_bridge_option(msg.get("key", ""), value)
         elif action == "app_update_check":
             await manager.async_check_app_update(force=True)
+        elif action == "nc_set_master":
+            await manager.async_nc_set_master(msg.get("enabled"))
+        elif action == "nc_set_type":
+            await manager.async_nc_set_type(msg.get("nc_type"), msg.get("enabled"))
         elif action == "group_add":
             await manager.async_group_add(str(value or ""))
         elif action == "group_rename":

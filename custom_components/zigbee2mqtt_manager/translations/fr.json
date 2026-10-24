@@ -1,0 +1,143 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Zigbee2MQTT Manager",
+        "description": "Relie le gestionnaire à ton instance Zigbee2MQTT via l'intégration MQTT.",
+        "data": {
+          "base_topic": "Base topic",
+          "low_battery_threshold": "Seuil « batterie faible » (%)"
+        },
+        "data_description": {
+          "base_topic": "Correspond à `mqtt.base_topic` dans la configuration de Zigbee2MQTT (par défaut : zigbee2mqtt)."
+        }
+      },
+      "reconfigure": {
+        "title": "Modifier le base topic",
+        "data": {
+          "base_topic": "Base topic"
+        },
+        "data_description": {
+          "base_topic": "Doit correspondre à `mqtt.base_topic` dans Zigbee2MQTT."
+        }
+      }
+    },
+    "error": {
+      "invalid_topic": "Base topic invalide (vide ou contenant # ou +).",
+      "topic_overlap": "Les base topics de plusieurs instances ne doivent pas être imbriqués (p. ex. « zigbee2mqtt » et « zigbee2mqtt/stick2 »). Utilise des topics séparés comme « zigbee2mqtt » et « zigbee2mqtt2 »."
+    },
+    "abort": {
+      "already_configured": "Une entrée existe déjà pour ce base topic.",
+      "mqtt_unavailable": "L'intégration MQTT n'est pas configurée ou pas connectée.",
+      "reconfigure_successful": "Le base topic a été modifié."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Zigbee2MQTT Manager – paramètres",
+        "description": "Version installée : **{version}**\n\nBase topic de cette instance : **{base_topic}**\n\n{update_info}",
+        "data": {
+          "low_battery_threshold": "Seuil « batterie faible » (%)",
+          "critical_battery_threshold": "Seuil « batterie critique » (%)",
+          "fire_events": "Déclencher des événements Home Assistant",
+          "nc_enabled": "Envoyer les notifications au Notification Center",
+          "nc_types": "Types de notifications",
+          "stale_hours": "« Sans nouvelles » après (heures)",
+          "problem_include_updates": "Les mises à jour comptent comme problème",
+          "problem_include_stale": "« Sans nouvelles » compte comme problème",
+          "sidebar_panel": "Entrée dans la barre latérale",
+          "sidebar_title": "Nom dans la barre latérale",
+          "network_url": "Adresse de la carte du réseau (facultatif)"
+        },
+        "data_description": {
+          "critical_battery_threshold": "Doit être inférieur ou égal au seuil « batterie faible ».",
+          "fire_events": "Déclenche p. ex. zigbee2mqtt_manager_device_offline, _battery_low et _update_available – utilisable comme déclencheur d'automatisation.",
+          "nc_enabled": "Actif uniquement si l'intégration « Notification Center » est installée. L'interrupteur principal active ou désactive toutes les notifications de ce gestionnaire.",
+          "nc_types": "Choisissez les notifications envoyées. La liste est triée par urgence, les notifications critiques en premier.",
+          "stale_hours": "Heures sans message après lesquelles un appareil est considéré « sans nouvelles » (0 = désactivé). Les appareils que Zigbee2MQTT signale déjà hors ligne comptent comme hors ligne.",
+          "problem_include_updates": "Le capteur « Problème » s'active aussi lorsqu'une mise à jour du firmware est disponible.",
+          "problem_include_stale": "Le capteur « Problème » s'active aussi lorsqu'un appareil reste silencieux plus longtemps que la durée définie. Prudence avec les appareils qui émettent rarement.",
+          "sidebar_panel": "Affiche la carte comme page à part dans la barre latérale (administrateurs uniquement), sans devoir créer de tableau de bord.",
+          "sidebar_title": "Libellé de l'entrée dans la barre latérale (par défaut : « Zigbee2MQTT Manager »). Pratique si l'app Z2M avec la même icône y figure aussi. Effet immédiat.",
+          "network_url": "Destination du bouton « Réseau », par exemple la carte du réseau de ton interface Zigbee2MQTT (http://… ou un chemin comme /hassio/ingress/…). Laisse vide pour utiliser l'adresse de la configuration Z2M ou l'app Zigbee2MQTT de la barre latérale."
+        }
+      }
+    },
+    "error": {
+      "critical_above_low": "Le seuil critique ne doit pas dépasser le seuil « faible ».",
+      "invalid_url": "Adresse non valide. Autorisés : http://, https:// ou un chemin commençant par / (sans espaces)."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "devices": {
+        "name": "Appareils"
+      },
+      "offline": {
+        "name": "Appareils hors ligne"
+      },
+      "low_battery": {
+        "name": "Appareils à batterie faible"
+      },
+      "critical_battery": {
+        "name": "Appareils à batterie critique"
+      },
+      "disabled": {
+        "name": "Appareils désactivés"
+      },
+      "updates_available": {
+        "name": "Mises à jour du firmware disponibles"
+      },
+      "groups": {
+        "name": "Groupes"
+      },
+      "missing": {
+        "name": "Appareils manquants"
+      }
+    },
+    "binary_sensor": {
+      "problem": {
+        "name": "Problème"
+      }
+    }
+  },
+  "services": {
+    "permit_join": {
+      "name": "Contrôler l'appairage",
+      "description": "Démarre ou arrête le mode d'appairage du bridge Zigbee2MQTT.",
+      "fields": {
+        "entry_id": {
+          "name": "ID d'entrée",
+          "description": "Nécessaire uniquement avec plusieurs instances."
+        },
+        "enabled": {
+          "name": "Actif",
+          "description": "Active ou désactive l'appairage."
+        },
+        "duration": {
+          "name": "Durée",
+          "description": "Durée en secondes (10–254)."
+        },
+        "base_topic": {
+          "name": "Base topic",
+          "description": "Nécessaire uniquement avec plusieurs instances. Alternative à l'ID d'entrée."
+        }
+      }
+    },
+    "check_updates": {
+      "name": "Rechercher des mises à jour du firmware",
+      "description": "Recherche en arrière-plan des mises à jour pour tous les appareils compatibles OTA.",
+      "fields": {
+        "entry_id": {
+          "name": "ID d'entrée",
+          "description": "Nécessaire uniquement avec plusieurs instances."
+        },
+        "base_topic": {
+          "name": "Base topic",
+          "description": "Nécessaire uniquement avec plusieurs instances. Alternative à l'ID d'entrée."
+        }
+      }
+    }
+  }
+}
