@@ -333,6 +333,7 @@ Alle schreibenden Aktionen (Umbenennen, Optionen, Schalten von Funktionen, Entfe
 
 | Version | Änderungen |
 |---|---|
+| **1.3.2 (Fork)** | Vollständiger Merge des Upstream-Stands 1.3.1. Der Integrationscode entspricht Upstream; die früheren lokalen Offline- und Scroll-Änderungen sind nicht separat enthalten. |
 | **1.3.1** | Behoben: Die **Geräteliste sprang beim Scrollen immer wieder nach oben** (bei 97 Geräten kaum bedienbar). Vermutete Ursache: Beim Neuzeichnen gab die Karte dem zuletzt benutzten Feld (Suche, Sortierung, Gruppieren, Filter) den Fokus mit `focus()` zurück; Firefox, Safari und die Companion-App scrollen dabei das Feld ins Bild, also nach oben. Jetzt bleibt ein noch fokussiertes Feld unangetastet, ein ersetztes bekommt den Fokus ohne Scrollen zurück, und die Karte stellt die Scrollposition nach jedem Neuzeichnen wieder her. |
 | **1.3.0** | Neu: **Netzwerkkarte** in der Kategorie Netzwerk (Coordinator, Router und Endgeräte-Wolken als Zeichnung, darunter je Router ein Akkordeon mit den Verbindungen; Abfrage per „Netz neu einlesen“), mit **Zoom** (Zoombalken, Zwei-Finger-Geste, Strg + Mausrad) und **Verschieben mit gedrückter Maustaste** in alle Richtungen. Neu: **Beschreibung** aus Zigbee2MQTT in der Geräteliste und oben im Geräte-Popup (Issue #16; Karteneinstellung jetzt `show_description`, der Herstellertext heißt **Produktbeschreibung**). Neu: **Zahlenfelder im Options-Dialog mit Eingabefeld neben dem Regler** (Issue #17); `max_rows` und `zoom` im Karteneditor als Eingabefeld. Neu: **verlorene Geräte** (seit Tagen keine Nachricht) gelten als offline, Einstellung „Verloren“ nach (Tagen). Neu: **Offline-Status ignorieren** je Gerät (Issue #15). Neu: optionaler **externer MQTT-Broker** (Issue #14, experimentell). Neu: **Zigbee2MQTT-Update-Prüfung mit Hinweis und Benachrichtigung** (PR #18, @seebaer1976). Neu: **Symbol der Integration neben dem Kartentitel** (`show_title_icon`). Neu: **Karteneditor mehrsprachig** (Issue #22). Neu: Sprache **Rumänisch** (PR #21, Dank an @robex2005). Die Issues #12 und #13 waren schon mit 1.2.2 behoben. |
 | **1.2.2** | Neu: eigene Kategorie **Netzwerk** in der Kartenleiste (mit Hinweis, wie die Adresse der Netzwerkkarte einzutragen ist, `show_network`). Behoben: Bei Home-Assistant-Sprache **Serbisch (lateinisch, `sr-Latn`)** zeigten Karte, Willkommensmeldung und Versionshinweis Kyrillisch, weil nur der Sprachteil „sr“ ausgewertet wurde; es gibt jetzt einen lateinischen Textblock. |
@@ -349,7 +350,7 @@ Jede `.py`-, `.js`- und `.yaml`-Datei trägt in der ersten Zeile einen SHA-256-H
 
 | Datei | SHA-256 |
 |---|---|
-| `custom_components/zigbee2mqtt_manager/manifest.json` | `c8d664a526850e818abf38b028d155e9022e261b0cee9d05145dab6f8020cf14` |
+| `custom_components/zigbee2mqtt_manager/manifest.json` | `dd893739fec77474ef04b5d7a91b05f87de3e9fe204013a492c2ad6843ceb9ad` |
 | `custom_components/zigbee2mqtt_manager/strings.json` | `3921c4b01e2e3fca583882d3a883c2019214047581868faee897b7e3307a3825` |
 | `custom_components/zigbee2mqtt_manager/icons.json` | `7edb380606df1bfbae5954235fcab84bed87d0b0d5a1c40834653dbd1a7c3d7e` |
 | `custom_components/zigbee2mqtt_manager/translations/de.json` | `3921c4b01e2e3fca583882d3a883c2019214047581868faee897b7e3307a3825` |
