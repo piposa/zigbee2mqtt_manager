@@ -3,28 +3,41 @@
     "step": {
       "user": {
         "title": "Zigbee2MQTT Manager",
-        "description": "Connects the manager to your Zigbee2MQTT instance through the MQTT integration.",
+        "description": "Connects the manager to your Zigbee2MQTT instance, by default through Home Assistant's MQTT integration. Optional: a different MQTT broker (fields below).",
         "data": {
           "base_topic": "Base topic",
-          "low_battery_threshold": "Threshold for “low battery” (%)"
+          "low_battery_threshold": "Threshold for “low battery” (%)",
+          "broker_host": "External MQTT broker (address, optional)",
+          "broker_port": "Port of the external broker",
+          "broker_username": "Username (optional)",
+          "broker_password": "Password (optional)",
+          "broker_tls": "Encrypted connection (TLS)"
         },
         "data_description": {
-          "base_topic": "Matches `mqtt.base_topic` in the Zigbee2MQTT configuration (default: zigbee2mqtt)."
+          "base_topic": "Matches `mqtt.base_topic` in the Zigbee2MQTT configuration (default: zigbee2mqtt).",
+          "broker_host": "Leave empty if Zigbee2MQTT uses the MQTT broker of Home Assistant. Otherwise enter the broker's address, e.g. a second site reached over VPN. Experimental, only lightly tested."
         }
       },
       "reconfigure": {
         "title": "Change base topic",
         "data": {
-          "base_topic": "Base topic"
+          "base_topic": "Base topic",
+          "broker_host": "External MQTT broker (address, optional)",
+          "broker_port": "Port of the external broker",
+          "broker_username": "Username (optional)",
+          "broker_password": "Password (optional)",
+          "broker_tls": "Encrypted connection (TLS)"
         },
         "data_description": {
-          "base_topic": "Must match `mqtt.base_topic` in Zigbee2MQTT."
+          "base_topic": "Must match `mqtt.base_topic` in Zigbee2MQTT.",
+          "broker_host": "Leave empty if Zigbee2MQTT uses the MQTT broker of Home Assistant. Otherwise enter the broker's address, e.g. a second site reached over VPN. Experimental, only lightly tested."
         }
       }
     },
     "error": {
       "invalid_topic": "Invalid base topic (empty or containing # or +).",
-      "topic_overlap": "Base topics of several instances must not be nested (e.g. “zigbee2mqtt” and “zigbee2mqtt/stick2”). Use separate ones such as “zigbee2mqtt” and “zigbee2mqtt2”."
+      "topic_overlap": "Base topics of several instances must not be nested (e.g. “zigbee2mqtt” and “zigbee2mqtt/stick2”). Use separate ones such as “zigbee2mqtt” and “zigbee2mqtt2”.",
+      "broker_unreachable": "The external MQTT broker is unreachable or refuses the connection."
     },
     "abort": {
       "already_configured": "An entry for this base topic already exists.",
@@ -44,6 +57,7 @@
           "nc_enabled": "Send notifications to the Notification Center",
           "nc_types": "Notification types",
           "stale_hours": "“Not heard from” after (hours)",
+          "lost_days": "“Lost” after (days)",
           "problem_include_updates": "Updates count as a problem",
           "problem_include_stale": "“Not heard from” counts as a problem",
           "sidebar_panel": "Sidebar entry",
@@ -56,6 +70,7 @@
           "nc_enabled": "Only effective if the “Notification Center” integration is installed. The main switch turns all notifications from this manager on or off.",
           "nc_types": "Choose which notifications are sent. The list is sorted by urgency, critical items first.",
           "stale_hours": "Hours without a message after which a device counts as “not heard from” (0 = off). Devices Zigbee2MQTT already reports as offline are counted under offline.",
+          "lost_days": "Days without a message after which a device counts as lost and is treated like an offline device (0 = off). Helps when Zigbee2MQTT does not report availability and a device keeps showing its last values. For single devices, switch it off with “Ignore offline status”.",
           "problem_include_updates": "The “Problem” sensor also turns on when a firmware update is available.",
           "problem_include_stale": "The “Problem” sensor also turns on when a device has been silent longer than the set time. Be careful with devices that rarely send.",
           "sidebar_panel": "Shows the card as its own page in the sidebar (administrators only), so no dashboard has to be built.",

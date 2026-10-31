@@ -17,11 +17,13 @@ Die Dashboard-Konfiguration ist in HA gespeichert und nicht Teil dieses
 Integrationspatches.
 Eine exportierte Vorlage liegt im Fork unter examples/z2m-manger-dashboard.json.
 
-Der Fork-Quellcode enthaelt diese Aenderungen bereits. Den Patch nur auf den
-unveraenderten Upstream-Stand 1.1.0 anwenden, nicht nochmals auf diesen Fork.
+Historisches Archiv: Der aktuelle Fork-Stand 1.3.1 uebernimmt den Upstream-
+Laufzeitcode vollstaendig. Diese alten lokalen Korrekturen sind darin nicht
+automatisch enthalten. Den Patch ausschliesslich auf den unveraenderten
+Upstream-Stand 1.1.0 anwenden, niemals auf den aktuellen Fork.
 
-Die derzeitige Installation enthaelt den Patch bereits. Nach einer
-Neuinstallation des unveraenderten Stands 1.1.0 als Benutzer pi:
+Falls bewusst der unveraenderte Stand 1.1.0 gepatcht werden soll, als
+Benutzer pi:
 
   cd /opt/haos-docker
   sudo patch --dry-run --batch --forward -p0 < local-patches/zigbee2mqtt_manager-local-1.1.0-20261019.patch

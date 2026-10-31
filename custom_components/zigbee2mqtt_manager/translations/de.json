@@ -3,28 +3,41 @@
     "step": {
       "user": {
         "title": "Zigbee2MQTT Manager",
-        "description": "Verbindet den Manager mit deiner Zigbee2MQTT-Instanz über die MQTT-Integration.",
+        "description": "Verbindet den Manager mit deiner Zigbee2MQTT-Instanz, standardmäßig über die MQTT-Integration von Home Assistant. Optional: ein anderer MQTT-Broker (Felder unten).",
         "data": {
           "base_topic": "Base-Topic",
-          "low_battery_threshold": "Schwelle für „Batterie niedrig“ (%)"
+          "low_battery_threshold": "Schwelle für „Batterie niedrig“ (%)",
+          "broker_host": "Externer MQTT-Broker (Adresse, optional)",
+          "broker_port": "Port des externen Brokers",
+          "broker_username": "Benutzername (optional)",
+          "broker_password": "Passwort (optional)",
+          "broker_tls": "Verschlüsselte Verbindung (TLS)"
         },
         "data_description": {
-          "base_topic": "Entspricht `mqtt.base_topic` in der Zigbee2MQTT-Konfiguration (Standard: zigbee2mqtt)."
+          "base_topic": "Entspricht `mqtt.base_topic` in der Zigbee2MQTT-Konfiguration (Standard: zigbee2mqtt).",
+          "broker_host": "Leer lassen, wenn Zigbee2MQTT am MQTT-Broker von Home Assistant hängt. Sonst die Adresse des Brokers, z. B. eines zweiten Standorts im VPN. Experimentell, nur eingeschränkt getestet."
         }
       },
       "reconfigure": {
         "title": "Base-Topic ändern",
         "data": {
-          "base_topic": "Base-Topic"
+          "base_topic": "Base-Topic",
+          "broker_host": "Externer MQTT-Broker (Adresse, optional)",
+          "broker_port": "Port des externen Brokers",
+          "broker_username": "Benutzername (optional)",
+          "broker_password": "Passwort (optional)",
+          "broker_tls": "Verschlüsselte Verbindung (TLS)"
         },
         "data_description": {
-          "base_topic": "Muss mit `mqtt.base_topic` in Zigbee2MQTT übereinstimmen."
+          "base_topic": "Muss mit `mqtt.base_topic` in Zigbee2MQTT übereinstimmen.",
+          "broker_host": "Leer lassen, wenn Zigbee2MQTT am MQTT-Broker von Home Assistant hängt. Sonst die Adresse des Brokers, z. B. eines zweiten Standorts im VPN. Experimentell, nur eingeschränkt getestet."
         }
       }
     },
     "error": {
       "invalid_topic": "Ungültiges Base-Topic (leer oder mit # bzw. +).",
-      "topic_overlap": "Base-Topics mehrerer Instanzen dürfen nicht ineinander liegen (z. B. „zigbee2mqtt“ und „zigbee2mqtt/stick2“). Nimm getrennte wie „zigbee2mqtt“ und „zigbee2mqtt2“."
+      "topic_overlap": "Base-Topics mehrerer Instanzen dürfen nicht ineinander liegen (z. B. „zigbee2mqtt“ und „zigbee2mqtt/stick2“). Nimm getrennte wie „zigbee2mqtt“ und „zigbee2mqtt2“.",
+      "broker_unreachable": "Der externe MQTT-Broker ist nicht erreichbar oder lehnt die Verbindung ab."
     },
     "abort": {
       "already_configured": "Für dieses Base-Topic existiert bereits ein Eintrag.",
@@ -44,6 +57,7 @@
           "nc_enabled": "Meldungen ans Notification Center senden",
           "nc_types": "Meldungsarten",
           "stale_hours": "„Lange nichts gehört“ nach (Stunden)",
+          "lost_days": "„Verloren“ nach (Tagen)",
           "problem_include_updates": "Updates zählen als Störung",
           "problem_include_stale": "„Lange nichts gehört“ zählt als Störung",
           "sidebar_panel": "Eintrag in der Seitenleiste",
@@ -56,6 +70,7 @@
           "nc_enabled": "Nur wirksam, wenn die Integration „Notification Center“ installiert ist. Der Hauptschalter schaltet alle Meldungen dieses Managers ein oder aus.",
           "nc_types": "Auswahl der Meldungen, die gesendet werden. Die Liste ist nach Dringlichkeit sortiert, Kritisches steht oben.",
           "stale_hours": "Stunden ohne Nachricht, ab denen ein Gerät als „lange nichts gehört“ gilt (0 = aus). Geräte, die Zigbee2MQTT schon als offline meldet, zählen unter Offline.",
+          "lost_days": "Tage ohne Nachricht, ab denen ein Gerät als verloren gilt und wie ein Offline-Gerät behandelt wird (0 = aus). Hilft, wenn Zigbee2MQTT die Verfügbarkeit nicht meldet und ein Gerät mit seinen letzten Werten stehen bleibt. Für einzelne Geräte lässt sich das mit „Offline-Status ignorieren“ ausschalten.",
           "problem_include_updates": "Der Sensor „Störung“ geht auch an, wenn ein Firmware-Update verfügbar ist.",
           "problem_include_stale": "Der Sensor „Störung“ geht auch an, wenn ein Gerät länger als die eingestellte Zeit still ist. Vorsicht bei Geräten, die selten senden.",
           "sidebar_panel": "Zeigt die Karte als eigene Seite in der Seitenleiste (nur für Administratoren). So ist kein eigenes Dashboard nötig.",

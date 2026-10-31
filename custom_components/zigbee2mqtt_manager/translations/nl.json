@@ -3,28 +3,41 @@
     "step": {
       "user": {
         "title": "Zigbee2MQTT Manager",
-        "description": "Verbindt de manager via de MQTT-integratie met je Zigbee2MQTT-instantie.",
+        "description": "Verbindt de manager met je Zigbee2MQTT-instantie, standaard via de MQTT-integratie van Home Assistant. Optioneel: een andere MQTT-broker (velden hieronder).",
         "data": {
           "base_topic": "Base-topic",
-          "low_battery_threshold": "Drempel voor „batterij laag” (%)"
+          "low_battery_threshold": "Drempel voor „batterij laag” (%)",
+          "broker_host": "Externe MQTT-broker (adres, optioneel)",
+          "broker_port": "Poort van de externe broker",
+          "broker_username": "Gebruikersnaam (optioneel)",
+          "broker_password": "Wachtwoord (optioneel)",
+          "broker_tls": "Versleutelde verbinding (TLS)"
         },
         "data_description": {
-          "base_topic": "Komt overeen met `mqtt.base_topic` in de Zigbee2MQTT-configuratie (standaard: zigbee2mqtt)."
+          "base_topic": "Komt overeen met `mqtt.base_topic` in de Zigbee2MQTT-configuratie (standaard: zigbee2mqtt).",
+          "broker_host": "Laat leeg als Zigbee2MQTT de MQTT-broker van Home Assistant gebruikt. Vul anders het adres van de broker in, bijv. een tweede locatie via VPN. Experimenteel, beperkt getest."
         }
       },
       "reconfigure": {
         "title": "Base-topic wijzigen",
         "data": {
-          "base_topic": "Base-topic"
+          "base_topic": "Base-topic",
+          "broker_host": "Externe MQTT-broker (adres, optioneel)",
+          "broker_port": "Poort van de externe broker",
+          "broker_username": "Gebruikersnaam (optioneel)",
+          "broker_password": "Wachtwoord (optioneel)",
+          "broker_tls": "Versleutelde verbinding (TLS)"
         },
         "data_description": {
-          "base_topic": "Moet overeenkomen met `mqtt.base_topic` in Zigbee2MQTT."
+          "base_topic": "Moet overeenkomen met `mqtt.base_topic` in Zigbee2MQTT.",
+          "broker_host": "Laat leeg als Zigbee2MQTT de MQTT-broker van Home Assistant gebruikt. Vul anders het adres van de broker in, bijv. een tweede locatie via VPN. Experimenteel, beperkt getest."
         }
       }
     },
     "error": {
       "invalid_topic": "Ongeldig base-topic (leeg of met # of +).",
-      "topic_overlap": "Base-topics van meerdere instanties mogen niet in elkaar liggen (bijv. „zigbee2mqtt” en „zigbee2mqtt/stick2”). Gebruik gescheiden topics zoals „zigbee2mqtt” en „zigbee2mqtt2”."
+      "topic_overlap": "Base-topics van meerdere instanties mogen niet in elkaar liggen (bijv. „zigbee2mqtt” en „zigbee2mqtt/stick2”). Gebruik gescheiden topics zoals „zigbee2mqtt” en „zigbee2mqtt2”.",
+      "broker_unreachable": "De externe MQTT-broker is niet bereikbaar of weigert de verbinding."
     },
     "abort": {
       "already_configured": "Voor dit base-topic bestaat al een item.",
@@ -44,6 +57,7 @@
           "nc_enabled": "Meldingen naar het Notification Center sturen",
           "nc_types": "Soorten meldingen",
           "stale_hours": "„Lang niets gehoord” na (uren)",
+          "lost_days": "„Verloren” na (dagen)",
           "problem_include_updates": "Updates tellen als storing",
           "problem_include_stale": "„Lang niets gehoord” telt als storing",
           "sidebar_panel": "Item in de zijbalk",
@@ -56,6 +70,7 @@
           "nc_enabled": "Alleen actief als de integratie „Notification Center” is geïnstalleerd. De hoofdschakelaar zet alle meldingen van deze manager aan of uit.",
           "nc_types": "Kies welke meldingen worden verstuurd. De lijst is op urgentie gesorteerd, kritieke meldingen staan bovenaan.",
           "stale_hours": "Uren zonder bericht waarna een apparaat als „lang niets gehoord” geldt (0 = uit). Apparaten die Zigbee2MQTT al als offline meldt, tellen onder offline.",
+          "lost_days": "Dagen zonder bericht waarna een apparaat als verloren geldt en als offline wordt behandeld (0 = uit). Helpt als Zigbee2MQTT de beschikbaarheid niet meldt en een apparaat zijn laatste waarden blijft tonen. Voor afzonderlijke apparaten schakel je dit uit met „Offline-status negeren”.",
           "problem_include_updates": "De sensor „Storing” gaat ook aan als er een firmware-update beschikbaar is.",
           "problem_include_stale": "De sensor „Storing” gaat ook aan als een apparaat langer dan de ingestelde tijd stil is. Pas op bij apparaten die zelden zenden.",
           "sidebar_panel": "Toont de kaart als eigen pagina in de zijbalk (alleen voor beheerders), zodat er geen eigen dashboard nodig is.",

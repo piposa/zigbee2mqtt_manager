@@ -1,4 +1,4 @@
-# SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): 72b225b512eb3607a366ff7cda4c1e36a9238835089ca0b7b7c172ccc3cfd8c3
+# SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): 47ab99a47befe47106de883a489040d882241f1e89042cb7746f9dc16ab275e3
 """Config Flow für Zigbee2MQTT Manager."""
 
 from __future__ import annotations
@@ -16,9 +16,22 @@ from homeassistant.config_entries import (
 )
 from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.selector import (
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
+)
 
 from .const import (
     CONF_BASE_TOPIC,
+    CONF_BROKER_HOST,
+    CONF_BROKER_PASSWORD,
+    CONF_BROKER_PORT,
+    CONF_BROKER_TLS,
+    CONF_BROKER_USERNAME,
     CONF_CRITICAL_BATTERY,
     CONF_FIRE_EVENTS,
     CONF_LOW_BATTERY,
@@ -27,8 +40,10 @@ from .const import (
     CONF_PROBLEM_UPDATES,
     CONF_SIDEBAR_PANEL,
     CONF_SIDEBAR_TITLE,
+    CONF_LOST_DAYS,
     CONF_STALE_HOURS,
     DEFAULT_BASE_TOPIC,
+    DEFAULT_BROKER_PORT,
     DEFAULT_CRITICAL_BATTERY,
     DEFAULT_FIRE_EVENTS,
     DEFAULT_LOW_BATTERY,
@@ -36,6 +51,7 @@ from .const import (
     DEFAULT_PROBLEM_UPDATES,
     DEFAULT_SIDEBAR_PANEL,
     DEFAULT_SIDEBAR_TITLE,
+    DEFAULT_LOST_DAYS,
     DEFAULT_STALE_HOURS,
     DOMAIN,
     MAX_SIDEBAR_TITLE,
@@ -43,29 +59,101 @@ from .const import (
     clean_title,
     valid_link,
 )
+from .mqtt_transport import async_test_broker, broker_key
 from .nc_catalog import NC_TYPE_IDS, nc_type_labels
 from .notification_bridge import OPT_ENABLED as NC_OPT_ENABLED
 from .notification_bridge import OPT_TYPES as NC_OPT_TYPES
 
-_BATTERY_VALIDATOR = vol.All(vol.Coerce(int), vol.Range(min=1, max=99))
-_STALE_VALIDATOR = vol.All(vol.Coerce(int), vol.Range(min=0, max=720))
+
+
+def _slider(minimum: int, maximum: int, unit: str) -> NumberSelector:
+    """Schieberegler MIT Eingabefeld daneben (Zahl direkt tippen); der Wert kommt als Zahl zurück."""
+    return NumberSelector(
+        NumberSelectorConfig(
+            min=minimum,
+            max=maximum,
+            step=1,
+            mode=NumberSelectorMode.SLIDER,
+            unit_of_measurement=unit,
+        )
+    )
+
+
+_BATTERY_VALIDATOR = _slider(1, 99, "%")
+_STALE_VALIDATOR = _slider(0, 720, "h")
+_LOST_VALIDATOR = _slider(0, 365, "d")
+# Optionen, die als ganze Zahl gespeichert werden (der Zahlenwähler liefert Fließkommazahlen)
+_INT_OPTIONS = (CONF_LOW_BATTERY, CONF_CRITICAL_BATTERY, CONF_STALE_HOURS, CONF_LOST_DAYS)
 
 
 def _valid_topic(base: str) -> bool:
     return bool(base) and "#" not in base and "+" not in base
 
 
+_PORT_VALIDATOR = vol.All(vol.Coerce(int), vol.Range(min=1, max=65535))
+
+
+def _broker_data(user_input: dict[str, Any]) -> dict[str, Any]:
+    """Angaben zum externen MQTT-Broker (leer = MQTT-Integration von Home Assistant)."""
+    host = str(user_input.get(CONF_BROKER_HOST) or "").strip()
+    if not host:
+        return {}
+    return {
+        CONF_BROKER_HOST: host,
+        CONF_BROKER_PORT: int(user_input.get(CONF_BROKER_PORT) or DEFAULT_BROKER_PORT),
+        CONF_BROKER_USERNAME: str(user_input.get(CONF_BROKER_USERNAME) or ""),
+        CONF_BROKER_PASSWORD: str(user_input.get(CONF_BROKER_PASSWORD) or ""),
+        CONF_BROKER_TLS: bool(user_input.get(CONF_BROKER_TLS)),
+    }
+
+
+def _unique_id(base: str, broker: dict[str, Any]) -> str:
+    """Kennung des Eintrags: gleiches Base-Topic an verschiedenen Brokern ist erlaubt."""
+    key = broker_key(broker)
+    return f"{key}/{base}" if key else base
+
+
+def _broker_schema(defaults: dict[str, Any]) -> dict[Any, Any]:
+    """Formularfelder für den optionalen externen Broker."""
+    return {
+        vol.Optional(
+            CONF_BROKER_HOST,
+            description={"suggested_value": defaults.get(CONF_BROKER_HOST, "")},
+        ): str,
+        vol.Optional(
+            CONF_BROKER_PORT,
+            default=defaults.get(CONF_BROKER_PORT, DEFAULT_BROKER_PORT),
+        ): _PORT_VALIDATOR,
+        vol.Optional(
+            CONF_BROKER_USERNAME,
+            description={"suggested_value": defaults.get(CONF_BROKER_USERNAME, "")},
+        ): str,
+        vol.Optional(
+            CONF_BROKER_PASSWORD,
+            description={"suggested_value": defaults.get(CONF_BROKER_PASSWORD, "")},
+        ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
+        vol.Optional(
+            CONF_BROKER_TLS, default=bool(defaults.get(CONF_BROKER_TLS, False))
+        ): bool,
+    }
+
+
 def _overlaps_other_entry(
-    flow: ConfigFlow, base: str, exclude_entry_id: str | None = None
+    flow: ConfigFlow,
+    base: str,
+    exclude_entry_id: str | None = None,
+    broker: str = "",
 ) -> bool:
     """True, wenn ein Base-Topic in einem anderen verschachtelt ist.
 
     Mehrere Sticks brauchen getrennte Base-Topics. Liegt eines unter dem anderen
     (z. B. "zigbee2mqtt" und "zigbee2mqtt/stick2"), würde die erste Instanz die
-    Nachrichten der zweiten mitlesen.
+    Nachrichten der zweiten mitlesen. Das gilt nur am selben Broker.
     """
     for entry in flow.hass.config_entries.async_entries(DOMAIN):
         if entry.entry_id == exclude_entry_id:
+            continue
+        if broker_key(entry.data) != broker:
             continue
         other = str(entry.data.get(CONF_BASE_TOPIC, "")).strip("/")
         if other and (
@@ -92,22 +180,29 @@ class Z2MManagerConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             base = user_input[CONF_BASE_TOPIC].strip().strip("/")
+            broker = _broker_data(user_input)
             if not _valid_topic(base):
                 errors[CONF_BASE_TOPIC] = "invalid_topic"
-            elif _overlaps_other_entry(self, base):
+            elif _overlaps_other_entry(self, base, broker=broker_key(broker)):
                 errors[CONF_BASE_TOPIC] = "topic_overlap"
             else:
-                await self.async_set_unique_id(base)
+                await self.async_set_unique_id(_unique_id(base, broker))
                 self._abort_if_unique_id_configured()
-                if not await mqtt.async_wait_for_mqtt_client(self.hass):
+                if broker:
+                    error = await async_test_broker(self.hass, broker)
+                    if error:
+                        errors[CONF_BROKER_HOST] = error
+                elif not await mqtt.async_wait_for_mqtt_client(self.hass):
                     return self.async_abort(reason="mqtt_unavailable")
+            if not errors:
                 return self.async_create_entry(
-                    title=f"Zigbee2MQTT Manager ({base})",
-                    data={CONF_BASE_TOPIC: base},
+                    title=f"Zigbee2MQTT Manager ({base})"
+                    + (f" @ {broker[CONF_BROKER_HOST]}" if broker else ""),
+                    data={CONF_BASE_TOPIC: base, **broker},
                     options={
-                        CONF_LOW_BATTERY: user_input[CONF_LOW_BATTERY],
+                        CONF_LOW_BATTERY: int(user_input[CONF_LOW_BATTERY]),
                         CONF_CRITICAL_BATTERY: min(
-                            DEFAULT_CRITICAL_BATTERY, user_input[CONF_LOW_BATTERY]
+                            DEFAULT_CRITICAL_BATTERY, int(user_input[CONF_LOW_BATTERY])
                         ),
                         CONF_FIRE_EVENTS: DEFAULT_FIRE_EVENTS,
                     },
@@ -121,6 +216,7 @@ class Z2MManagerConfigFlow(ConfigFlow, domain=DOMAIN):
                     vol.Required(
                         CONF_LOW_BATTERY, default=DEFAULT_LOW_BATTERY
                     ): _BATTERY_VALIDATOR,
+                    **_broker_schema(user_input or {}),
                 }
             ),
             errors=errors,
@@ -135,18 +231,34 @@ class Z2MManagerConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             base = user_input[CONF_BASE_TOPIC].strip().strip("/")
+            broker = _broker_data(user_input)
             if not _valid_topic(base):
                 errors[CONF_BASE_TOPIC] = "invalid_topic"
-            elif _overlaps_other_entry(self, base, entry.entry_id):
+            elif _overlaps_other_entry(
+                self, base, entry.entry_id, broker=broker_key(broker)
+            ):
                 errors[CONF_BASE_TOPIC] = "topic_overlap"
             else:
-                await self.async_set_unique_id(base)
-                self._abort_if_unique_id_mismatch(reason="already_configured")
+                existing = await self.async_set_unique_id(_unique_id(base, broker))
+                if existing is not None and existing.entry_id != entry.entry_id:
+                    return self.async_abort(reason="already_configured")
+                if broker:
+                    error = await async_test_broker(self.hass, broker)
+                    if error:
+                        errors[CONF_BROKER_HOST] = error
+            if not errors:
+                # Broker-Angaben ersetzen (nicht ergänzen): leer = zurück zur MQTT-Integration
+                data = {
+                    k: v
+                    for k, v in entry.data.items()
+                    if not k.startswith("broker_")
+                }
                 return self.async_update_reload_and_abort(
                     entry,
-                    unique_id=base,
-                    title=f"Zigbee2MQTT Manager ({base})",
-                    data_updates={CONF_BASE_TOPIC: base},
+                    unique_id=_unique_id(base, broker),
+                    title=f"Zigbee2MQTT Manager ({base})"
+                    + (f" @ {broker[CONF_BROKER_HOST]}" if broker else ""),
+                    data={**data, CONF_BASE_TOPIC: base, **broker},
                 )
 
         return self.async_show_form(
@@ -154,8 +266,10 @@ class Z2MManagerConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {
                     vol.Required(
-                        CONF_BASE_TOPIC, default=entry.data[CONF_BASE_TOPIC]
-                    ): str
+                        CONF_BASE_TOPIC,
+                        default=(user_input or entry.data)[CONF_BASE_TOPIC],
+                    ): str,
+                    **_broker_schema(user_input or dict(entry.data)),
                 }
             ),
             errors=errors,
@@ -170,6 +284,10 @@ class Z2MManagerOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
+            user_input = {
+                **user_input,
+                **{key: int(user_input[key]) for key in _INT_OPTIONS if key in user_input},
+            }
             network_url = str(user_input.get(CONF_NETWORK_URL) or "").strip()
             if user_input[CONF_CRITICAL_BATTERY] > user_input[CONF_LOW_BATTERY]:
                 errors[CONF_CRITICAL_BATTERY] = "critical_above_low"
@@ -247,6 +365,10 @@ class Z2MManagerOptionsFlow(OptionsFlow):
                         CONF_STALE_HOURS,
                         default=opts.get(CONF_STALE_HOURS, DEFAULT_STALE_HOURS),
                     ): _STALE_VALIDATOR,
+                    vol.Required(
+                        CONF_LOST_DAYS,
+                        default=opts.get(CONF_LOST_DAYS, DEFAULT_LOST_DAYS),
+                    ): _LOST_VALIDATOR,
                     vol.Required(
                         CONF_PROBLEM_UPDATES,
                         default=opts.get(CONF_PROBLEM_UPDATES, DEFAULT_PROBLEM_UPDATES),

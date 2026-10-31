@@ -1,5 +1,5 @@
-# SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): f0154f86e837492866c92e3fd13e739fb1bf1f641a3791e1164928a8a1fdb334
-"""Übersichts-Sensoren (Geräte, Offline, Deaktiviert, Batterie, Updates)."""
+# SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): 5c371f42c62528e22226689aada45c33a3e7d75a520560e72c2eb390d39422ca
+"""Übersichts-Sensoren (Geräte, Offline, Batterie niedrig, Updates)."""
 
 from __future__ import annotations
 

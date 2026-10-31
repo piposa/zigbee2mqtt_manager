@@ -1,4 +1,4 @@
-# SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): 60a7ce0462517e716d45bb82b4d9470abf2c57e63e86043f7206067d947cd7e2
+# SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): 8206397fc77af33759b326ec6e9b5823ae4cc766badc620e02521f4d0bd9d02b
 """Hält den Zustand der Zigbee2MQTT-Bridge und sendet Befehle per MQTT."""
 
 from __future__ import annotations
@@ -12,10 +12,9 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
-from homeassistant.components import mqtt
+from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
-from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -34,6 +33,7 @@ from .const import (
     CONF_PROBLEM_UPDATES,
     CONF_SIDEBAR_PANEL,
     CONF_SIDEBAR_TITLE,
+    CONF_LOST_DAYS,
     CONF_STALE_HOURS,
     DEFAULT_CRITICAL_BATTERY,
     DEFAULT_FIRE_EVENTS,
@@ -41,6 +41,7 @@ from .const import (
     MAX_COMMENT_LENGTH,
     DEFAULT_PROBLEM_STALE,
     DEFAULT_PROBLEM_UPDATES,
+    DEFAULT_LOST_DAYS,
     DEFAULT_STALE_HOURS,
     DOMAIN,
     EVENT_BATTERY_LOW,
@@ -53,8 +54,10 @@ from .const import (
     EXPECTED_GONE_SECONDS,
     FLUSH_DELAY,
     GITHUB_RELEASES_URL,
+    Z2M_GITHUB_RELEASES_URL,
     MAX_EVENT_LOG,
     MIN_Z2M_MAJOR,
+    NETWORK_REQUEST_TIMEOUT,
     OTA_CHECK_SPACING,
     PERMIT_JOIN_SECONDS,
     STORAGE_SAVE_DELAY,
@@ -63,6 +66,7 @@ from .const import (
     VERSION,
     valid_link,
 )
+from .mqtt_transport import create_transport
 from .nc_catalog import (
     NC_CATALOG,
     NC_SOURCE_ICON,
@@ -75,14 +79,15 @@ from .notification_bridge import (
     OPT_TYPES as NC_OPT_TYPES,
     NotificationBridge,
 )
-from .update_check import async_fetch_latest, is_newer
+from .network_map import build_topology, parse_networkmap
+from .update_check import async_fetch_latest, async_fetch_latest_z2m, is_newer
 
 _LOGGER = logging.getLogger(__name__)
 
 Listener = Callable[[str, Any], None]
 
 # Antworten der Bridge, die an die Karte weitergereicht werden (Toasts)
-_FORWARDED_RESPONSES = ("device/", "group/", "permit_join", "options", "restart")
+_FORWARDED_RESPONSES = ("device/", "group/", "permit_join", "options", "restart", "networkmap")
 
 # Nur diese Schlüssel eines Geräte-Payloads werden persistent zwischengespeichert
 _CACHED_KEYS = (
@@ -295,15 +300,30 @@ class Z2MManager:
         self.base_topic: str = entry.data[CONF_BASE_TOPIC].strip("/")
         self._prefix = f"{self.base_topic}/"
 
+        # MQTT: Integration von Home Assistant oder ein eigener (externer) Broker
+        self._transport = create_transport(hass, entry.entry_id, entry.data)
+
         self.bridge_online: bool | None = None
         self.bridge_info: dict[str, Any] = {}
+
+        # Netzwerkkarte: zuletzt gelesene Topologie (bleibt über Neustarts erhalten) und Abfragestatus
+        self._network: dict[str, Any] | None = None
+        self._network_at: str | None = None
+        self._network_loading_since: str | None = None
+        self._network_error: str | None = None
+        self._network_timeout: CALLBACK_TYPE | None = None
+        # Geräte, deren Offline-Status ignoriert wird (z. B. Lampe hinter einem Wandschalter)
+        self._ignore_offline: set[str] = set()
 
         # Metadaten nach IEEE-Adresse, Zustände nach friendly_name
         self._meta: dict[str, dict[str, Any]] = {}
         self._groups: dict[int, dict[str, Any]] = {}
         self._states: dict[str, dict[str, Any]] = {}
-        # Zigbee2MQTT-Verfuegbarkeit ist die massgebliche Quelle fuer den Status.
         self._availability: dict[str, bool] = {}
+        # Zeitpunkt der letzten Verfügbarkeits-Meldung und der letzten LIVE-Nachricht
+        # (nicht retained) je Gerät – zum Abgleich, siehe _effective_availability()
+        self._availability_ts: dict[str, datetime] = {}
+        self._live_msg: dict[str, datetime] = {}
         self._last_msg: dict[str, str] = {}
         # Gerade gespeicherte Kommentare (ieee -> Text), bis Z2M die Konfiguration neu meldet
         self._comment_pending: dict[str, str] = {}
@@ -326,6 +346,13 @@ class Z2MManager:
             "latest_version": None,
             "update_available": False,
             "release_url": GITHUB_RELEASES_URL,
+            "checked_at": None,
+            "check_failed": False,
+        }
+        self.z2m: dict[str, Any] = {
+            "latest_version": None,
+            "update_available": False,
+            "release_url": Z2M_GITHUB_RELEASES_URL,
             "checked_at": None,
             "check_failed": False,
         }
@@ -386,6 +413,10 @@ class Z2MManager:
         return int(self.entry.options.get(CONF_STALE_HOURS, DEFAULT_STALE_HOURS))
 
     @property
+    def lost_days(self) -> int:
+        return int(self.entry.options.get(CONF_LOST_DAYS, DEFAULT_LOST_DAYS))
+
+    @property
     def problem_includes_updates(self) -> bool:
         return bool(self.entry.options.get(CONF_PROBLEM_UPDATES, DEFAULT_PROBLEM_UPDATES))
 
@@ -398,16 +429,22 @@ class Z2MManager:
         return bool(self.entry.options.get(CONF_FIRE_EVENTS, DEFAULT_FIRE_EVENTS))
 
     async def async_start(self) -> None:
-        if not await mqtt.async_wait_for_mqtt_client(self.hass):
-            raise ConfigEntryNotReady("MQTT ist nicht verfügbar")
+        await self._transport.async_wait_ready()
 
         stored = await self._store.async_load()
         if isinstance(stored, dict):
             cache = stored.get("devices")
             if isinstance(cache, dict):
                 self._cache = {k: v for k, v in cache.items() if isinstance(v, dict)}
+            ignored = stored.get("ignore_offline")
+            if isinstance(ignored, list):
+                self._ignore_offline = {str(i).lower() for i in ignored if isinstance(i, str)}
             # Geräteliste nur übernehmen, wenn sie zum selben Base-Topic gehört (sonst anderer Stick)
             if stored.get("known_topic") == self.base_topic:
+                network = stored.get("network")
+                if isinstance(network, dict) and isinstance(network.get("raw"), dict):
+                    self._network = network["raw"]
+                    self._network_at = network.get("at")
                 known = stored.get("known")
                 if isinstance(known, dict):
                     self._known = {k: v for k, v in known.items() if isinstance(v, dict)}
@@ -416,8 +453,8 @@ class Z2MManager:
                     self._missing = {k: v for k, v in missing.items() if isinstance(v, dict)}
 
         self._unsubs.append(
-            await mqtt.async_subscribe(
-                self.hass, f"{self.base_topic}/#", self._handle_message
+            await self._transport.async_subscribe(
+                f"{self.base_topic}/#", self._handle_message
             )
         )
 
@@ -430,13 +467,14 @@ class Z2MManager:
         # Zählt die gesendeten Meldungen je Art (Diagnose); speichert keine Inhalte
         self._unsubs.append(self.hass.bus.async_listen(NC_EVENT_REPORT, self._nc_count))
 
-        # Beim Start und danach regelmäßig auf eine neue App-Version prüfen
+        # Beim Start und danach regelmäßig auf neue App- und Zigbee2MQTT-Versionen prüfen
         self._unsubs.append(
             async_track_time_interval(
                 self.hass, self._app_update_tick, APP_UPDATE_CHECK_INTERVAL
             )
         )
         self._spawn(self.async_check_app_update(), "app_update_check")
+        self._spawn(self.async_check_z2m_update(), "z2m_update_check")
 
     @callback
     def async_stop(self) -> None:
@@ -449,6 +487,9 @@ class Z2MManager:
         for task in list(self._tasks):
             task.cancel()
         self._tasks.clear()
+        if self._network_timeout:
+            self._network_timeout()
+            self._network_timeout = None
         self._store.async_delay_save(self._cache_data, 0)
         self._listeners.clear()
 
@@ -505,6 +546,10 @@ class Z2MManager:
             "known_topic": self.base_topic,
             "known": self._known,
             "missing": self._missing,
+            "ignore_offline": sorted(self._ignore_offline),
+            "network": (
+                {"raw": self._network, "at": self._network_at} if self._network else None
+            ),
         }
 
     # ------------------------------------------------------------------
@@ -526,7 +571,7 @@ class Z2MManager:
         if rel.endswith("/availability"):
             self._handle_availability(rel[: -len("/availability")], payload)
             return
-        self._handle_device_state(rel, payload)
+        self._handle_device_state(rel, payload, bool(getattr(msg, "retain", False)))
 
     def _handle_bridge(self, sub: str, payload: Any) -> None:
         if sub == "state":
@@ -534,7 +579,16 @@ class Z2MManager:
             self.bridge_online = state == "online"
             self._schedule_update()
         elif sub == "info" and isinstance(payload, dict):
+            version_changed = self.bridge_info.get("version") != payload.get("version")
             self.bridge_info = payload
+            latest_version = self.z2m.get("latest_version")
+            if latest_version:
+                self.z2m = {
+                    **self.z2m,
+                    "update_available": is_newer(latest_version, payload.get("version")),
+                }
+            if version_changed:
+                self._spawn(self.async_check_z2m_update(), "z2m_update_check")
             self._comment_pending.clear()
             self._schedule_update()
         elif sub == "devices" and isinstance(payload, list):
@@ -551,6 +605,8 @@ class Z2MManager:
     def _handle_response(self, topic: str, payload: Any) -> None:
         if not isinstance(payload, dict):
             return
+        if topic == "networkmap":
+            self._handle_networkmap(payload)
         if topic == "device/options" and payload.get("status") == "error":
             if self._comment_pending:
                 self._comment_pending.clear()
@@ -562,9 +618,42 @@ class Z2MManager:
                     "topic": topic,
                     "status": payload.get("status"),
                     "error": payload.get("error"),
-                    "data": payload.get("data"),
+                    # Die Netzwerkkarte ist groß und läuft über die Daten der Karte, nicht über die Antwort
+                    "data": None if topic == "networkmap" else payload.get("data"),
                 },
             )
+
+    def _handle_networkmap(self, payload: dict[str, Any]) -> None:
+        """Antwort auf die Abfrage der Netzwerkkarte übernehmen."""
+        if self._network_loading_since is None:
+            return  # nicht von uns angefordert (z. B. Z2M-Oberfläche): ignorieren
+        self._network_clear_loading()
+        data = payload.get("data")
+        value = data.get("value") if isinstance(data, dict) else None
+        parsed = parse_networkmap(value) if payload.get("status") == "ok" else None
+        if parsed is None:
+            self._network_error = "failed"
+            _LOGGER.warning("Zigbee2MQTT hat die Netzwerkkarte nicht geliefert")
+        else:
+            self._network = parsed
+            self._network_at = dt_util.utcnow().isoformat(timespec="seconds")
+            self._network_error = None
+            self._log("network_map", "", f"{len(parsed['nodes'])}")
+        self._schedule_update()
+
+    def _network_clear_loading(self) -> None:
+        self._network_loading_since = None
+        if self._network_timeout:
+            self._network_timeout()
+            self._network_timeout = None
+
+    @callback
+    def _network_timed_out(self, _now: Any = None) -> None:
+        self._network_timeout = None
+        if self._network_loading_since is not None:
+            self._network_loading_since = None
+            self._network_error = "timeout"
+            self._schedule_update()
 
     def _handle_bridge_event(self, payload: dict[str, Any]) -> None:
         kind = payload.get("type")
@@ -613,6 +702,8 @@ class Z2MManager:
                 for store in (
                     self._states,
                     self._availability,
+                    self._availability_ts,
+                    self._live_msg,
                     self._last_msg,
                 ):
                     if old_name in store and new_name not in store:
@@ -701,6 +792,8 @@ class Z2MManager:
             "ha_device_id": ha[0] if ha else None,
             "area": ha[2] if ha else None,
             "stale": False,
+            "lost": False,
+            "ignore_offline": False,
             "type": snap.get("type"),
             "vendor": snap.get("vendor"),
             "model": snap.get("model"),
@@ -756,19 +849,28 @@ class Z2MManager:
         state = payload.get("state") if isinstance(payload, dict) else payload
         if state in ("online", "offline"):
             self._availability[name] = state == "online"
+            self._availability_ts[name] = dt_util.utcnow()
             self._schedule_update()
 
     def _is_group(self, name: str) -> bool:
         return any(g.get("friendly_name") == name for g in self._groups.values())
 
-    def _handle_device_state(self, name: str, payload: Any) -> None:
+    def _handle_device_state(
+        self, name: str, payload: Any, retained: bool = False
+    ) -> None:
         if not isinstance(payload, dict):
             return
         # Gruppen-Topics sind keine Geräte (sonst tauchen sie als Phantom auf)
         if self._is_group(name):
             return
         self._states.setdefault(name, {}).update(payload)
-        self._last_msg[name] = dt_util.utcnow().isoformat(timespec="seconds")
+        # Gespeicherte (retained) Werte des Brokers sind keine neue Nachricht des Geräts: sie setzen die
+        # Zeit der letzten Nachricht nur, wenn noch keine bekannt ist (sonst würde ein verschwundenes
+        # Gerät bei jedem Start wieder „gerade gesehen“ wirken).
+        if not retained or name not in self._last_msg:
+            self._last_msg[name] = dt_util.utcnow().isoformat(timespec="seconds")
+        if not retained:
+            self._live_msg[name] = dt_util.utcnow()
         self._schedule_update()
 
     # ------------------------------------------------------------------
@@ -858,12 +960,20 @@ class Z2MManager:
     def _effective_availability(self, name: str) -> tuple[bool | None, str | None]:
         """Verfügbarkeit eines Geräts: (Wert, Quelle).
 
-        Zigbee2MQTTs explizite Availability-Meldung ist massgeblich. Eine
-        Geraete-Payload allein ist kein Beweis fuer Erreichbarkeit und darf
-        einen Offline-Status auch nach einem Neustart nicht ueberschreiben.
+        Zigbee2MQTT meldet Geräte, die sich lange nicht gemeldet haben, als offline
+        (bei Batteriegeräten erst nach Stunden). Eine gespeicherte (retained)
+        Offline-Meldung kann veraltet sein. Hat das Gerät NACH dieser Meldung live
+        gesendet, ist es erreichbar – dann gilt es als online (Quelle "activity").
         """
         raw = self._availability.get(name)
-        return (raw, "z2m") if raw is not None else (None, None)
+        if raw is None:
+            return None, None
+        if raw is False:
+            live = self._live_msg.get(name)
+            seen = self._availability_ts.get(name)
+            if live is not None and seen is not None and live > seen:
+                return True, "activity"
+        return raw, "z2m"
 
     def _serialize(self, meta: dict[str, Any]) -> dict[str, Any]:
         name = meta.get("friendly_name", "")
@@ -885,12 +995,21 @@ class Z2MManager:
             icon = dev_icon
 
         config = self._device_config(meta)
-        comment = self._comment_pending.get(
-            str(meta.get("ieee_address") or "").lower(), config.get("description")
-        )
+        # Beschreibung (Z2M-Feld "description"): ein gerade gespeicherter Text gilt sofort, sonst
+        # der Wert aus den Einstellungen in bridge/info (Z2M veröffentlicht nach einer Änderung der
+        # Geräteoptionen nur bridge/info, nicht bridge/devices). Fehlt das Gerät dort, gilt ersatzweise
+        # das Feld "description" aus bridge/devices.
+        comment = self._comment_pending.get(str(meta.get("ieee_address") or "").lower())
+        if comment is None:
+            comment = config.get("description") if config else meta.get("description")
         comment = comment.strip() if isinstance(comment, str) and comment.strip() else None
         ha = self._ha_devices().get(str(meta.get("ieee_address") or "").lower())
         availability = self._effective_availability(name)
+        # Lange keine Nachricht: als offline behandeln (Quelle "silent"); Z2M-Offline bleibt unverändert
+        lost = not meta.get("disabled", False) and self._is_lost(last_seen)
+        stale_availability = availability[0]
+        if lost and availability[0] is not False:
+            availability = (False, "silent")
 
         return {
             "ieee": meta.get("ieee_address"),
@@ -899,7 +1018,9 @@ class Z2MManager:
             "ha_device": ha[1] if ha else None,
             "ha_device_id": ha[0] if ha else None,
             "area": ha[2] if ha else None,
-            "stale": self._is_stale(last_seen, availability[0]),
+            "stale": self._is_stale(last_seen, stale_availability) and not lost,
+            "lost": lost,
+            "ignore_offline": str(meta.get("ieee_address") or "").lower() in self._ignore_offline,
             "type": meta.get("type"),
             "vendor": definition.get("vendor"),
             "model": definition.get("model") or meta.get("model_id"),
@@ -955,6 +1076,55 @@ class Z2MManager:
             "scenes": len(group.get("scenes") or []),
         }
 
+    def _network_view(self) -> dict[str, Any]:
+        """Daten für den Reiter "Netzwerk": Baumansicht der zuletzt gelesenen Topologie."""
+        view: dict[str, Any] = {
+            "loading": self._network_loading_since is not None,
+            "loading_since": self._network_loading_since,
+            "error": self._network_error,
+            "updated_at": self._network_at,
+            "topology": None,
+        }
+        if self._network:
+            names = {
+                str(ieee).lower(): meta.get("friendly_name")
+                for ieee, meta in self._meta.items()
+                if meta.get("friendly_name")
+            }
+            view["topology"] = build_topology(self._network, names)
+        return view
+
+    async def async_network_refresh(self) -> None:
+        """Netzwerkkarte neu von Zigbee2MQTT abfragen (dauert, belastet das Zigbee-Netz)."""
+        if self._network_loading_since is not None:
+            raise ValueError("Die Abfrage läuft bereits")
+        if self.bridge_online is False:
+            raise ValueError("Zigbee2MQTT ist nicht erreichbar")
+        self._network_loading_since = dt_util.utcnow().isoformat(timespec="seconds")
+        self._network_error = None
+        self._network_timeout = async_call_later(
+            self.hass, NETWORK_REQUEST_TIMEOUT, self._network_timed_out
+        )
+        self._schedule_update()
+        try:
+            await self._request("networkmap", {"type": "raw", "routes": False})
+        except Exception:
+            self._network_clear_loading()
+            self._network_error = "failed"
+            self._schedule_update()
+            raise
+
+    async def async_set_ignore_offline(self, ieee: str | None, enabled: Any) -> None:
+        """Offline-Status eines Geräts ignorieren (keine Störung, keine Ereignisse, keine Meldung)."""
+        key = str(ieee or "").lower()
+        if key not in {str(i).lower() for i in self._meta}:
+            raise ValueError("Unbekanntes Gerät")
+        if bool(enabled):
+            self._ignore_offline.add(key)
+        else:
+            self._ignore_offline.discard(key)
+        self._schedule_update()
+
     def _network_url(self) -> tuple[str | None, str | None]:
         """Adresse der Zigbee2MQTT-Netzwerkkarte: eigene Angabe, sonst die URL aus der Z2M-Konfiguration."""
         custom = str(self.entry.options.get(CONF_NETWORK_URL) or "").strip()
@@ -992,7 +1162,10 @@ class Z2MManager:
         # In Zigbee2MQTT deaktivierte Geräte sind gewollt still: sie zählen nicht als Störung
         active = [d for d in devices if not d["disabled"]]
         disabled = [d for d in devices if d["disabled"]]
-        offline = [d for d in active if d["available"] is False]
+        offline = [
+            d for d in active if d["available"] is False and not d["ignore_offline"]
+        ]
+        ignored = [d for d in active if d["ignore_offline"]]
         low = [d for d in active if d["battery"] is not None and d["battery"] < low_t]
         critical = [
             d for d in active if d["battery"] is not None and d["battery"] < crit_t
@@ -1000,6 +1173,7 @@ class Z2MManager:
         available = [d for d in active if d["ota"]["state"] == "available"]
         updating = [d for d in active if d["ota"]["state"] == "updating"]
         stale = [d for d in active if d["stale"]]
+        lost = [d for d in active if d["lost"] and not d["ignore_offline"]]
         groups = sorted(
             (self._serialize_group(g) for g in self._groups.values()),
             key=lambda g: (g["name"] or "").lower(),
@@ -1023,6 +1197,7 @@ class Z2MManager:
             "updates_available": [d["name"] for d in available],
             "critical_battery": [d["name"] for d in critical],
             "stale": [d["name"] for d in stale],
+            "lost": [d["name"] for d in lost],
             "disabled": [d["name"] for d in disabled],
             "missing": [d["name"] for d in missing],
         }
@@ -1043,6 +1218,10 @@ class Z2MManager:
             "bridge": {
                 "online": self.bridge_online,
                 "version": version,
+                "latest_version": self.z2m["latest_version"],
+                "update_available": self.z2m["update_available"],
+                "release_url": self.z2m["release_url"],
+                "check_failed": self.z2m["check_failed"],
                 "compatible": major is None or major >= MIN_Z2M_MAJOR,
                 "permit_join": bool(info.get("permit_join")),
                 "permit_join_end": info.get("permit_join_end"),
@@ -1064,7 +1243,10 @@ class Z2MManager:
                 "updating": len(updating),
                 "stale": len(stale),
                 "stale_hours": self.stale_hours,
+                "lost": len(lost),
+                "lost_days": self.lost_days,
                 "disabled": len(disabled),
+                "ignored_offline": len(ignored),
                 "missing": len(missing),
                 "groups": len(groups),
                 "low_battery_threshold": low_t,
@@ -1072,11 +1254,13 @@ class Z2MManager:
             },
             "jobs": dict(self.jobs),
             "app": dict(self.app),
+            "z2m": dict(self.z2m),
             "nc": self.nc.snapshot(),
             "events": list(self._events),
             "groups": groups,
             "devices": devices,
             "missing": missing,
+            "network": self._network_view(),
         }
 
     # ------------------------------------------------------------------
@@ -1087,8 +1271,9 @@ class Z2MManager:
         low_t = self.low_battery_threshold
         return {
             "offline": {
-                d["name"] for d in devices
-                if not d["disabled"] and d["available"] is False
+                d["name"]
+                for d in devices
+                if d["available"] is False and not d["ignore_offline"]
             },
             "low": {
                 d["name"]
@@ -1115,7 +1300,7 @@ class Z2MManager:
             self._log("offline", name)
             self._fire(EVENT_DEVICE_OFFLINE, {"name": name, "ieee": by_name[name]["ieee"]})
         for name in previous["offline"] - current["offline"]:
-            if name in by_name and not by_name[name]["disabled"] and by_name[name]["available"] is True:
+            if name in by_name:
                 self._log("online", name)
                 self._fire(EVENT_DEVICE_ONLINE, {"name": name, "ieee": by_name[name]["ieee"]})
         for name in current["low"] - previous["low"]:
@@ -1179,7 +1364,7 @@ class Z2MManager:
                 continue
             name = device.get("name") or ieee
             subject = {"id": ieee, "name": name, "kind": "device"}
-            if device["available"] is False:
+            if device["available"] is False and not device.get("ignore_offline"):
                 state["device_offline"].append(
                     {"key": ieee, "subject": subject, "placeholders": {"name": name}}
                 )
@@ -1396,8 +1581,23 @@ class Z2MManager:
 
     @callback
     def _stale_tick(self, _now: Any = None) -> None:
-        if self.stale_hours > 0:
+        if self.stale_hours > 0 or self.lost_days > 0:
             self._schedule_update()
+
+    def _is_lost(self, last_seen: str | None) -> bool:
+        """Seit mehr als der eingestellten Zahl an Tagen keine Nachricht: Gerät vermutlich nicht mehr im Netz.
+
+        Gilt unabhängig von der Z2M-Verfügbarkeit (die ist oft aus oder zeigt einen veralteten Wert).
+        """
+        days = self.lost_days
+        if days <= 0 or not last_seen:
+            return False
+        seen = dt_util.parse_datetime(last_seen)
+        if seen is None:
+            return False
+        if seen.tzinfo is None:
+            seen = seen.replace(tzinfo=UTC)
+        return (dt_util.utcnow() - seen).total_seconds() > days * 86400
 
     def _is_stale(self, last_seen: str | None, available: bool | None) -> bool:
         """Länger als die eingestellte Zeit keine Nachricht, Z2M meldet das Gerät aber nicht als offline."""
@@ -1473,12 +1673,8 @@ class Z2MManager:
 
     async def _request(self, sub: str, payload: Any) -> None:
         body = payload if isinstance(payload, str) else json.dumps(payload)
-        await mqtt.async_publish(
-            self.hass,
-            f"{self.base_topic}/bridge/request/{sub}",
-            body,
-            qos=0,
-            retain=False,
+        await self._transport.async_publish(
+            f"{self.base_topic}/bridge/request/{sub}", body
         )
 
     def _valid_new_name(self, new_name: str, current: str | None) -> str:
@@ -1552,12 +1748,8 @@ class Z2MManager:
         value_off = False if row.get("value_off") is None else row["value_off"]
         if not (_same_value(value, value_on) or _same_value(value, value_off)):
             raise ValueError(f"Ungültiger Wert für '{prop}'")
-        await mqtt.async_publish(
-            self.hass,
-            f"{self.base_topic}/{name}/set",
-            json.dumps({prop: value}),
-            qos=0,
-            retain=False,
+        await self._transport.async_publish(
+            f"{self.base_topic}/{name}/set", json.dumps({prop: value})
         )
 
     async def async_remove(self, ieee: str | None, force: bool = False) -> None:
@@ -1678,6 +1870,7 @@ class Z2MManager:
     @callback
     def _app_update_tick(self, _now: datetime) -> None:
         self._spawn(self.async_check_app_update(), "app_update_check")
+        self._spawn(self.async_check_z2m_update(), "z2m_update_check")
 
     def _spawn(self, coro: Any, name: str) -> None:
         task = self.entry.async_create_background_task(
@@ -1702,6 +1895,75 @@ class Z2MManager:
                 "check_failed": False,
             }
         self._schedule_update()
+
+    async def async_check_z2m_update(self, force: bool = False) -> None:
+        """Auf GitHub nach einer neueren Zigbee2MQTT-Version suchen."""
+        current = (
+            self.bridge_info.get("version")
+            if isinstance(self.bridge_info, dict)
+            else None
+        )
+        latest = await async_fetch_latest_z2m(self.hass, current, force)
+        checked = dt_util.utcnow().isoformat(timespec="seconds")
+        if latest is None:
+            self.z2m = {**self.z2m, "checked_at": checked, "check_failed": True}
+        else:
+            current = (
+                self.bridge_info.get("version")
+                if isinstance(self.bridge_info, dict)
+                else None
+            )
+            self.z2m = {
+                **self.z2m,
+                "latest_version": latest["version"],
+                "release_url": latest["url"],
+                "update_available": is_newer(latest["version"], current),
+                "checked_at": checked,
+                "check_failed": False,
+            }
+            self._sync_z2m_update_notification(current)
+        self._schedule_update()
+
+    def _sync_z2m_update_notification(self, current_version: str | None) -> None:
+        """Persistente HA-Meldung bei einem verfügbaren Z2M-Update synchronisieren."""
+        if not current_version:
+            return
+
+        notification_id = f"{DOMAIN}_z2m_update_{self.entry.entry_id}"
+        if not self.z2m["update_available"]:
+            persistent_notification.async_dismiss(self.hass, notification_id)
+            return
+
+        latest_version = str(self.z2m["latest_version"])
+        release_url = self.z2m.get("release_url")
+        if not isinstance(release_url, str) or not release_url.startswith(
+            "https://github.com/Koenkk/zigbee2mqtt/"
+        ):
+            release_url = Z2M_GITHUB_RELEASES_URL
+
+        language = str(getattr(self.hass.config, "language", "en")).lower()
+        if language.startswith("de"):
+            title = "Zigbee2MQTT-Update verfügbar"
+            message = (
+                f"Installierte Version: `{current_version}`\n\n"
+                f"Neueste Version: **{latest_version}** ([Release ansehen]({release_url}))\n\n"
+                "Aktualisiere Zigbee2MQTT manuell auf dem Server bzw. im Docker-Container. "
+                "Das Update erfolgt nicht über HACS."
+            )
+        else:
+            title = "Zigbee2MQTT update available"
+            message = (
+                f"Installed version: `{current_version}`\n\n"
+                f"Latest version: **{latest_version}** ([View release]({release_url}))\n\n"
+                "Update Zigbee2MQTT manually on its server or in the Docker container, "
+                "not via HACS."
+            )
+        persistent_notification.async_create(
+            self.hass,
+            message,
+            title=title,
+            notification_id=notification_id,
+        )
 
     # --- Gruppen ------------------------------------------------------
     async def async_group_add(self, name: str) -> None:
