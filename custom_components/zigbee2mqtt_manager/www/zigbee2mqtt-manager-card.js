@@ -1,4 +1,4 @@
-// SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): 47f2827ef69b86e5663afe239588d44a8444f95375718ddfcb461958a79fcea0
+// SHA256 (Inhalt ab Zeile 2, d.h. dieser Datei ohne diese erste Zeile): 4c34ee6270d978622b5211e1fd5fbe1a53fe5a2f77790f6e29e539f9fb8fd8b8
 /**
  * zigbee2mqtt-manager-card
  * -------------------------
@@ -50,7 +50,7 @@
  * Kartentyp: custom:zigbee2mqtt-manager-card
  */
 
-const CARD_VERSION = "1.4.0";
+const CARD_VERSION = "1.4.1";
 // Datengetriebenes Neuzeichnen höchstens alle 2 s (Bedienaktionen zeichnen sofort)
 const RENDER_MIN_MS = 2000;
 // Zoom der Netzwerkzeichnung (Faktor; 1 = Originalgröße)
